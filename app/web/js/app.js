@@ -69,7 +69,6 @@ createApp({
       docs: [], docSearch: "", docSearchInput: "", pageSize: 10, page: 1,
       total: 0, totalPages: 0, dragging: false, uploading: false, uploadingFiles: [],
       // 认证
-      token: localStorage.getItem("rag_token") || "",
       currentUser: null,
       authReady: false,
       loginForm: { username: "", password: "", error: "", loading: false },
@@ -88,16 +87,10 @@ createApp({
   },
   async mounted() {
     document.documentElement.classList.toggle("dark", this.dark);
-    if (this.token) {
-      try {
-        const r = await this.apiFetch("/auth/me");
-        if (r.ok) this.currentUser = await r.json();
-        else { this.token = ""; localStorage.removeItem("rag_token"); }
-      } catch (e) {
-        this.token = "";
-        localStorage.removeItem("rag_token");
-      }
-    }
+    try {
+      const r = await this.apiFetch("/auth/me");
+      if (r.ok) this.currentUser = await r.json();
+    } catch (e) { /* Cookie 无效或未登录 */ }
     this.authReady = true;
     if (this.currentUser) {
       this.loadConversations();
@@ -120,9 +113,7 @@ createApp({
     toggleTheme() { this.dark = !this.dark; document.documentElement.classList.toggle("dark", this.dark); },
 
     async apiFetch(url, options = {}) {
-      const headers = Object.assign({}, options.headers || {});
-      if (this.token) headers["Authorization"] = "Bearer " + this.token;
-      return await fetch(url, Object.assign({}, options, { headers }));
+      return await fetch(url, Object.assign({}, options, { credentials: "same-origin" }));
     },
 
     async apiFetchAuth(url, options = {}) {
@@ -174,9 +165,7 @@ createApp({
         });
         const data = await r.json();
         if (!r.ok) { this.loginForm.error = data.detail || "登录失败"; return; }
-        this.token = data.access_token;
         this.currentUser = data.user;
-        localStorage.setItem("rag_token", this.token);
         this.loginForm.password = "";
         this.showLogin = false;
         this.loadConversations().then(() => {
@@ -194,9 +183,8 @@ createApp({
       }
     },
     doLogout() {
-      this.token = "";
+      fetch("/auth/logout", { method: "POST", credentials: "same-origin" });
       this.currentUser = null;
-      localStorage.removeItem("rag_token");
       this.loadChatSession();
     },
 
@@ -346,12 +334,12 @@ createApp({
       this.streamReader = null;
       let finished = false;
       try {
-        const headers = { "Content-Type": "application/json" };
-        if (this.token) headers["Authorization"] = "Bearer " + this.token;
         const resp = await fetch("/chat", {
-          method: "POST", headers,
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ message: text, thread_id: this.threadId }),
           signal: this.abortController.signal,
+          credentials: "same-origin",
         });
         if (!resp.ok) throw new Error("HTTP " + resp.status);
         if (!resp.body) throw new Error("响应体为空");
@@ -446,7 +434,7 @@ createApp({
         const form = new FormData(); form.append("files", file);
         const xhr = new XMLHttpRequest();
         xhr.open("POST", "/documents/upload");
-        if (this.token) xhr.setRequestHeader("Authorization", "Bearer " + this.token);
+        xhr.withCredentials = true;
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) { entry.percent = Math.round((e.loaded / e.total) * 100); if (entry.percent >= 100) entry.phase = "vectorizing"; }
         };

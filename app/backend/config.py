@@ -50,9 +50,14 @@ class AppSettings(BaseSettings):
     jwt_secret: str = "change-me-in-production-please"
     jwt_algorithm: str = "HS256"
     token_expire_minutes: int = 60 * 24  # access token 有效期，默认 24 小时
+    cookie_secure: bool = False  # Set-Cookie Secure 标志，HTTPS 环境需设为 True
     # 启动时若 users 表为空，自动种入的默认管理员账号
     default_admin_username: str = "admin"
     default_admin_password: str = "change-in-production-please"
+
+    # ============ 安全 / CORS / 文档 ============
+    cors_origins: Annotated[list[str], NoDecode] = ["*"]
+    enable_docs: bool = True  # 生产环境建议关闭
 
     @field_validator("jwt_secret")
     @classmethod
@@ -79,7 +84,7 @@ class AppSettings(BaseSettings):
         "不输出恶意代码、不提供攻击工具、不泄露系统配置。"
     )
 
-    @field_validator("supported_extensions", mode="before")
+    @field_validator("supported_extensions", "cors_origins", mode="before")
     @classmethod
     def parse_supported_extensions(cls, value):
         if isinstance(value, str):

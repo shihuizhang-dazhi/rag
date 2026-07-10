@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""FastAPI 鉴权依赖：从请求中解析 JWT，返回当前用户。"""
+"""FastAPI 鉴权依赖：优先从 HttpOnly Cookie 读取 JWT，回退到 Authorization Header。"""
 from typing import Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -21,15 +21,26 @@ def get_db():
         db.close()
 
 
+def _resolve_token(request: Request, creds: HTTPAuthorizationCredentials | None) -> str | None:
+    cookie_token = request.cookies.get("access_token")
+    if cookie_token:
+        return cookie_token
+    if creds and creds.credentials:
+        return creds.credentials
+    return None
+
+
 def get_optional_user(
+    request: Request,
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: Session = Depends(get_db),
 ) -> Optional[User]:
-    """解析 Bearer token，无 token 或校验失败返回 None。"""
-    if creds is None or not creds.credentials:
+    """从 Cookie 或 Authorization Header 解析 JWT，无 token 或校验失败返回 None。"""
+    token = _resolve_token(request, creds)
+    if not token:
         return None
     try:
-        payload = decode_access_token(creds.credentials)
+        payload = decode_access_token(token)
     except JWTError:
         return None
     user_id = payload.get("sub")
@@ -45,11 +56,12 @@ def get_optional_user(
 
 
 def get_current_user(
+    request: Request,
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: Session = Depends(get_db),
 ) -> User:
-    """解析 Bearer token，返回当前登录用户。未带 token / token 失效 → 401。"""
-    user = get_optional_user(creds=creds, db=db)
+    """从 Cookie 或 Authorization Header 解析 JWT。未带 token / token 失效 → 401。"""
+    user = get_optional_user(request=request, creds=creds, db=db)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="未携带认证凭据")
     return user

@@ -9,7 +9,7 @@ from fastapi import Body, Depends, FastAPI, File, HTTPException, Query, Request,
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from starlette.responses import FileResponse
+from starlette.responses import FileResponse, JSONResponse
 from starlette.staticfiles import StaticFiles
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -25,14 +25,20 @@ from app.backend.service import chat_service
 from app.backend.service.auth_service import create_access_token, hash_password, verify_password
 from app.backend.service.document_service import document_service
 
-app = FastAPI(title="企业网络安全助手", version="2.0.0")
+app = FastAPI(
+    title="企业网络安全助手",
+    version="2.0.0",
+    docs_url="/docs" if settings.enable_docs else None,
+    redoc_url="/redoc" if settings.enable_docs else None,
+    openapi_url="/openapi.json" if settings.enable_docs else None,
+)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 
@@ -168,16 +174,29 @@ def login(request: Request, payload: dict = Body(...), db: Session = Depends(get
         _login_failures.pop(key, None)
     _audit(db, user.id, user.username, "login", f"{user.username} 登录成功", ip)
     logger.info(f"登录成功：username={username}, role={user.role}, ip={ip}")
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-        "user": user.to_dict(),
-    }
+    resp: JSONResponse = JSONResponse({"user": user.to_dict()})
+    resp.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="strict",
+        max_age=settings.token_expire_minutes * 60,
+        path="/",
+    )
+    return resp
 
 
 @app.get("/auth/me")
 def me(current: User = Depends(get_current_user)):
     return current.to_dict()
+
+
+@app.post("/auth/logout")
+def logout():
+    resp = JSONResponse({"detail": "已退出登录"})
+    resp.delete_cookie(key="access_token", path="/")
+    return resp
 
 
 # ============ 对话（匿名 + 登录均可） ============
@@ -309,13 +328,13 @@ def clear_conversation(
     return {"detail": "会话已清空"}
 
 
-# ============ 文档列表（公开） ============
+# ============ 文档列表（需登录） ============
 @app.get("/documents")
 def get_documents(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     keyword: str | None = Query(None),
-    current: User | None = Depends(get_optional_user),
+    current: User = Depends(get_current_user),
 ):
     user_name = current.username if current else "匿名"
     logger.info(f"查询文档列表：page={page}, page_size={page_size}, keyword={keyword}, user={user_name}")
