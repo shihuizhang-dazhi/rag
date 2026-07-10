@@ -12,6 +12,7 @@ DocumentService：负责文件管理。
 """
 import mimetypes
 import os
+import re
 import uuid
 
 from app.backend.config import settings
@@ -22,6 +23,33 @@ from app.backend.service.vectorization_service import (
     delete_document_vectors,
     process_document,
 )
+
+_TEXT_EXTENSIONS = {".txt", ".md", ".markdown", ".csv"}
+
+_DOC_INJECTION_PATTERNS = [
+    r"(?i)ignore\s+(all\s+)?(previous|above|prior)\s+(instructions?|directives?|prompts?)",
+    r"(?i)(you\s+are|you're)\s+(now\s+)?(DAN|jailbroken|unrestricted)",
+    r"(?i)forget\s+(everything|all)\s+(you\s+know|you.ve\s+learned)",
+    r"(?i)system\s*(:\s*|prompt\s*:)\s*(new|override|replace)",
+    r"(?i)do\s+anything\s+now",
+    r"<\|im_start\|>|<\|im_end\|>",
+    r"\[SYSTEM\]\s*\(.*?\)",
+]
+
+
+def _scan_document_content(content: bytes, ext: str):
+    """扫描上传文档中是否包含提示词注入 payload。仅对纯文本格式扫描。"""
+    if ext.lower() not in _TEXT_EXTENSIONS:
+        return
+    try:
+        text = content.decode("utf-8", errors="ignore")
+    except Exception:
+        return
+    for pattern in _DOC_INJECTION_PATTERNS:
+        if re.search(pattern, text):
+            logger.warning(f"文档内容包含疑似注入 payload，匹配模式: {pattern}")
+            raise ValueError("文档内容包含不安全的指令模式，请检查后重新上传")
+
 
 # 魔数签名白名单
 _MAGIC_SIGNATURES = {
@@ -71,6 +99,9 @@ class DocumentService:
 
         # 魔数校验：防止伪造扩展名
         _check_magic_bytes(content, ext)
+
+        # 扫描文档内容中的注入 payload
+        _scan_document_content(content, ext)
 
         size = len(content)
         max_bytes = settings.max_file_size_mb * 1024 * 1024
