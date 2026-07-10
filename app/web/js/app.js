@@ -214,22 +214,25 @@ createApp({
       }
     },
     async loadChatSessionFromBackend() {
+      let msgs = [{ role: "bot", content: WELCOME }];
       try {
         const r = await this.apiFetchAuth("/conversations/" + this.threadId + "/messages");
-        if (!r.ok) { this.messages = [{ role: "bot", content: WELCOME }]; return; }
-        const d = await r.json();
-        const raw = d.messages || [];
-        if (raw.length === 0) { this.messages = [{ role: "bot", content: WELCOME }]; return; }
-        const msgs = [];
-        for (let i = 0; i < raw.length; i += 2) {
-          const u = raw[i], b = raw[i + 1];
-          if (u && u.role === "user") msgs.push({ role: "user", content: u.content });
-          if (b && b.role === "assistant") msgs.push({ role: "bot", content: b.content });
+        if (r.ok) {
+          const d = await r.json();
+          const raw = d.messages || [];
+          if (raw.length > 0) {
+            const result = [];
+            for (let i = 0; i < raw.length; i += 2) {
+              const u = raw[i], b = raw[i + 1];
+              if (u && u.role === "user") result.push({ role: "user", content: u.content });
+              if (b && b.role === "assistant") result.push({ role: "bot", content: b.content });
+            }
+            if (result.length > 0) msgs = result;
+          }
         }
-        this.messages = msgs.length > 0 ? msgs : [{ role: "bot", content: WELCOME }];
-      } catch (e) {
-        this.messages = [{ role: "bot", content: WELCOME }];
-      }
+      } catch (e) { /* 出错保持欢迎消息 */ }
+      this.messages = msgs;
+      this.$nextTick(() => this.scrollToBottom());
     },
     saveSession() {
       if (this.isStreaming || this.currentUser) return;
@@ -272,7 +275,7 @@ createApp({
       this.threadId = this.newThreadId();
       this.messages = [{ role: "bot", content: WELCOME }];
       if (this.currentUser) {
-        this.conversations.push({
+        this.conversations.unshift({
           thread_id: this.threadId, title: "新会话",
           created_at: new Date().toISOString(), msg_count: 0,
         });

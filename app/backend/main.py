@@ -205,7 +205,7 @@ def list_conversations(
         )
         .filter(Conversation.user_id == current.id)
         .group_by(Conversation.thread_id)
-        .order_by(func.min(Conversation.created_at).asc())
+        .order_by(func.min(Conversation.created_at).desc())
         .all()
     )
     result = []
