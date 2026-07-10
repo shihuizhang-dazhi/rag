@@ -704,17 +704,6 @@ body {
   font-family: var(--mono);
 }
 
-.cursor::after {
-  content: "▋";
-  animation: blink 1s steps(2) infinite;
-  color: var(--cyan);
-}
-
-@keyframes blink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0; }
-}
-
 .composer-shell {
   flex-shrink: 0;
 }
