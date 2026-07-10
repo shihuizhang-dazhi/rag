@@ -19,6 +19,9 @@ DOMAIN="${DOMAIN:-_}"              # 改为你的域名，留空用 IP
 NGINX_PORT="${NGINX_PORT:-80}"
 UVICORN_PORT="${UVICORN_PORT:-8000}"
 GIT_REPO="${GIT_REPO:-https://github.com/shihuizhang-dazhi/rag}"
+# 设为空字符串则从当前目录直接复制，不从 git 拉取
+# 用法: LOCAL_SRC=/home/ubuntu/workspace sudo ./deploy.sh
+LOCAL_SRC="${LOCAL_SRC:-}"
 
 # ---------- 1. 系统环境 ----------
 step "更新系统并安装依赖..."
@@ -35,7 +38,11 @@ if ! id -u "$APP_USER" &>/dev/null; then
 fi
 
 # ---------- 3. 拉取代码 ----------
-if [ -d "$APP_DIR/.git" ]; then
+if [ -n "$LOCAL_SRC" ]; then
+    step "从本地 $LOCAL_SRC 复制项目..."
+    rm -rf "$APP_DIR"
+    cp -a "$LOCAL_SRC" "$APP_DIR"
+elif [ -d "$APP_DIR/.git" ]; then
     step "更新已有代码..."
     git -C "$APP_DIR" pull --ff-only
 elif [ -d "$APP_DIR" ]; then
