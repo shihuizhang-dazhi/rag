@@ -41,10 +41,10 @@ if [ -d "$APP_DIR/.git" ]; then
 elif [ -d "$APP_DIR" ]; then
     step "目录已存在但不是 git 仓库，备份后重新克隆..."
     mv "$APP_DIR" "${APP_DIR}.bak.$(date +%s)"
-    git clone "$GIT_REPO" "$APP_DIR"
+    git clone --depth 1 "$GIT_REPO" "$APP_DIR"
 else
     step "克隆项目到 $APP_DIR ..."
-    git clone "$GIT_REPO" "$APP_DIR"
+    git clone --depth 1 "$GIT_REPO" "$APP_DIR"
 fi
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 
