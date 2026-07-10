@@ -31,14 +31,42 @@ createApp({
       dragging: false,
       uploading: false,
       uploadingFiles: [], // 上传/向量化进度
+      // 认证
+      token: localStorage.getItem("rag_token") || "",
+      currentUser: null, // {id, username, role, ...}
+      authReady: false,   // 启动时校验 token 完成
+      loginForm: { username: "", password: "", error: "", loading: false },
     };
   },
-  mounted() {
-    // 持久化当前 threadId
-    localStorage.setItem("rag_thread_id", this.threadId);
+  async mounted() {
     // 应用默认主题（深色）
     document.documentElement.classList.toggle("dark", this.dark);
-    this.loadDocuments();
+    // 启动时校验本地 token 是否仍有效
+    if (this.token) {
+      try {
+        const r = await this.apiFetch("/auth/me");
+        if (r.ok) this.currentUser = await r.json();
+        else this.logout();
+      } catch (e) {
+        this.logout();
+      }
+    }
+    this.authReady = true;
+    if (this.currentUser) {
+      localStorage.setItem("rag_thread_id", this.threadId);
+      this.loadDocuments();
+    }
+  },
+  computed: {
+    rangeStart() {
+      return this.total === 0 ? 0 : (this.page - 1) * this.pageSize + 1;
+    },
+    rangeEnd() {
+      return Math.min(this.page * this.pageSize, this.total);
+    },
+    isAdmin() {
+      return this.currentUser && this.currentUser.role === "admin";
+    },
   },
   computed: {
     rangeStart() {
@@ -59,6 +87,54 @@ createApp({
     toggleTheme() {
       this.dark = !this.dark;
       document.documentElement.classList.toggle("dark", this.dark);
+    },
+    // 统一封装 fetch：自动带 Authorization 头，401 自动登出跳回登录页
+    async apiFetch(url, options = {}) {
+      const headers = Object.assign({}, options.headers || {});
+      if (this.token) headers["Authorization"] = "Bearer " + this.token;
+      const r = await fetch(url, Object.assign({}, options, { headers }));
+      if (r.status === 401) {
+        this.logout();
+        throw new Error("未授权，请重新登录");
+      }
+      return r;
+    },
+    async login() {
+      this.loginForm.error = "";
+      const u = this.loginForm.username.trim();
+      const p = this.loginForm.password;
+      if (!u || !p) {
+        this.loginForm.error = "用户名和密码不能为空";
+        return;
+      }
+      this.loginForm.loading = true;
+      try {
+        const r = await fetch("/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: u, password: p }),
+        });
+        const data = await r.json();
+        if (!r.ok) {
+          this.loginForm.error = data.detail || "登录失败";
+          return;
+        }
+        this.token = data.access_token;
+        this.currentUser = data.user;
+        localStorage.setItem("rag_token", this.token);
+        localStorage.setItem("rag_thread_id", this.threadId);
+        this.loginForm.password = "";
+        this.loadDocuments();
+      } catch (e) {
+        this.loginForm.error = "网络错误：" + e.message;
+      } finally {
+        this.loginForm.loading = false;
+      }
+    },
+    logout() {
+      this.token = "";
+      this.currentUser = null;
+      localStorage.removeItem("rag_token");
     },
     scrollToBottom() {
       this.$nextTick(() => {
@@ -109,10 +185,17 @@ createApp({
       try {
         const resp = await fetch("/chat", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + this.token,
+          },
           body: JSON.stringify({ message: text, thread_id: this.threadId }),
           signal: this.abortController.signal,
         });
+        if (resp.status === 401) {
+          this.logout();
+          throw new Error("未授权，请重新登录");
+        }
         if (!resp.ok) throw new Error("HTTP " + resp.status);
         if (!resp.body) throw new Error("响应体为空");
 
@@ -205,7 +288,7 @@ createApp({
           page_size: String(this.pageSize),
         });
         if (this.docSearch) params.set("keyword", this.docSearch);
-        const r = await fetch("/documents?" + params.toString());
+        const r = await this.apiFetch("/documents?" + params.toString());
         if (!r.ok) throw new Error("HTTP " + r.status);
         const data = await r.json();
         this.docs = (data.documents || []).map((d) => this.mapDoc(d));
@@ -299,6 +382,7 @@ createApp({
 
         const xhr = new XMLHttpRequest();
         xhr.open("POST", "/documents/upload");
+        xhr.setRequestHeader("Authorization", "Bearer " + this.token);
 
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) {
@@ -312,6 +396,11 @@ createApp({
           entry.phase = "vectorizing";
         };
         xhr.onload = () => {
+          if (xhr.status === 401) {
+            this.logout();
+            reject(new Error("未授权，请重新登录"));
+            return;
+          }
           if (xhr.status >= 200 && xhr.status < 300) {
             let data = null;
             try { data = JSON.parse(xhr.responseText); } catch (e) {}
@@ -331,7 +420,7 @@ createApp({
       if (!doc) return;
       if (!confirm(`确定删除文档「${doc.name}」吗？`)) return;
       try {
-        const r = await fetch("/documents/" + encodeURIComponent(doc.id), { method: "DELETE" });
+        const r = await this.apiFetch("/documents/" + encodeURIComponent(doc.id), { method: "DELETE" });
         if (!r.ok) {
           let msg = "HTTP " + r.status;
           try { msg = (await r.json()).detail || msg; } catch (e) {}

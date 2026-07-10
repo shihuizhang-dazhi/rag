@@ -8,6 +8,39 @@
 </head>
 <body>
   <div id="app">
+    <!-- 登录页 -->
+    <div v-if="!currentUser" class="login-screen">
+      <div class="login-card">
+        <div class="login-logo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+          </svg>
+        </div>
+        <h1>SecKB · 企业网络安全助手</h1>
+        <p class="login-sub">请登录后使用知识库问答</p>
+        <form class="login-form" @submit.prevent="login">
+          <input
+            type="text"
+            v-model="loginForm.username"
+            placeholder="用户名"
+            autocomplete="username"
+            :disabled="loginForm.loading" />
+          <input
+            type="password"
+            v-model="loginForm.password"
+            placeholder="密码"
+            autocomplete="current-password"
+            :disabled="loginForm.loading" />
+          <div v-if="loginForm.error" class="login-error">{{ loginForm.error }}</div>
+          <button type="submit" class="btn btn-primary login-btn" :disabled="loginForm.loading">
+            {{ loginForm.loading ? "登录中…" : "登 录" }}
+          </button>
+        </form>
+        <p class="login-tip">默认管理员账号：admin / admin123（请尽快修改密码）</p>
+      </div>
+    </div>
+
+    <template v-else>
     <aside class="sidebar">
       <div class="brand">
         <div class="logo">
@@ -37,6 +70,20 @@
       </nav>
 
       <div class="sidebar-footer">
+        <div class="user-box">
+          <div class="user-avatar">{{ (currentUser.username || '?').slice(0, 1).toUpperCase() }}</div>
+          <div class="user-meta">
+            <div class="user-name">{{ currentUser.username }}</div>
+            <div class="user-role">{{ currentUser.role }}</div>
+          </div>
+          <button class="icon-btn" title="退出登录" @click="logout">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+          </button>
+        </div>
         <button class="theme-toggle" @click="toggleTheme">
           <svg v-if="!dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="5"></circle>
@@ -132,7 +179,7 @@
             <h1>文档管理</h1>
             <p>上传文档、自动向量化，并在知识库中统一检索</p>
           </div>
-          <button class="btn btn-primary" @click="triggerUpload">
+          <button class="btn btn-primary" @click="triggerUpload" v-if="isAdmin">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
               <polyline points="17 8 12 3 7 8"></polyline>
@@ -156,6 +203,7 @@
           </section>
 
           <div
+            v-if="isAdmin"
             class="dropzone"
             :class="{ drag: dragging }"
             @click="triggerUpload"
@@ -241,7 +289,7 @@
                       已向量化
                     </span>
                   </td>
-                  <td><span class="row-action" @click="removeDoc(doc.id)">删除</span></td>
+                  <td><span v-if="isAdmin" class="row-action" @click="removeDoc(doc.id)">删除</span><span v-else class="row-action disabled">—</span></td>
                 </tr>
               </tbody>
             </table>
@@ -275,6 +323,7 @@
         </div>
       </template>
     </main>
+    </template>
   </div>
 
   <script src="/static/js/vue.global.prod.js"></script>

@@ -46,6 +46,14 @@ class AppSettings(BaseSettings):
     chroma_path: str
     chroma_collection_name: str = "documents"
 
+    # ============ 认证鉴权 ============
+    jwt_secret: str = "change-me-in-production-please"
+    jwt_algorithm: str = "HS256"
+    token_expire_minutes: int = 60 * 24  # access token 有效期，默认 24 小时
+    # 启动时若 users 表为空，自动种入的默认管理员账号
+    default_admin_username: str = "admin"
+    default_admin_password: str = "admin123"
+
     # ============ 应用文案 ============
     system_prompt: str = (
         "你是一名企业网络安全助手，专注于信息安全领域。"

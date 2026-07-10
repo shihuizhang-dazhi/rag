@@ -28,3 +28,7 @@ pydantic-settings>=2           # .env 配置加载
 
 # ===== 日志 =====
 loguru
+
+# ===== 认证鉴权 =====
+passlib[bcrypt]             # 密码哈希
+python-jose[cryptography]   # JWT 签发与解析
