@@ -38,6 +38,9 @@ def get_optional_user(
     user = db.get(User, int(user_id))
     if user is None or not user.is_active:
         return None
+    token_ver = payload.get("ver")
+    if token_ver is not None and token_ver != user.token_version:
+        return None
     return user
 
 

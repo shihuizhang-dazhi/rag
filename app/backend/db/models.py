@@ -43,6 +43,7 @@ class User(Base):
     password_hash = Column(String(255), nullable=False, comment="bcrypt 哈希后的密码")
     role = Column(String(32), nullable=False, default="user", comment="角色：admin/user/auditor")
     is_active = Column(Boolean, default=True, comment="是否启用，禁用后无法登录")
+    token_version = Column(Integer, default=0, comment="令牌版本号，每次登录自增，用于实现单点登录")
     created_at = Column(DateTime, default=func.now(), comment="创建时间")
 
     def to_dict(self) -> dict:

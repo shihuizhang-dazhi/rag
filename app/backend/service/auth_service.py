@@ -25,7 +25,8 @@ def verify_password(plain: str, hashed: str) -> bool:
 def create_access_token(subject: str | int, extra: dict | None = None) -> str:
     """签发 JWT。subject 通常是 user_id。
 
-    payload 内含 exp（过期）、iat（签发时间），可附带 extra 里的额外声明（如 role）。
+    payload 内含 exp（过期）、iat（签发时间）、ver（token_version 实现单点登录），
+    可附带 extra 里的额外声明（如 role、username）。
     """
     now = datetime.now(timezone.utc)
     expire = now + timedelta(minutes=settings.token_expire_minutes)

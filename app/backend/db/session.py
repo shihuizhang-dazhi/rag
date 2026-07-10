@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from app.backend.config import settings
@@ -17,7 +17,18 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 def init_db() -> None:
     """应用启动时创建所有继承 Base 的表结构，并种入默认账号。"""
     Base.metadata.create_all(bind=engine)
+    _migrate_add_token_version()
     _seed_default_users()
+
+
+def _migrate_add_token_version() -> None:
+    """对旧数据库迁移：添加 token_version 列（单点登录所需）。"""
+    with engine.connect() as conn:
+        cols = {row[1] for row in conn.execute(text("PRAGMA table_info(users)")).fetchall()}
+        if "token_version" not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0"))
+            conn.commit()
+            logger.info("数据库迁移：已为 users 表添加 token_version 列")
 
 
 def _seed_default_users() -> None:

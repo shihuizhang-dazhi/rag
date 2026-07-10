@@ -154,7 +154,16 @@ def login(request: Request, payload: dict = Body(...), db: Session = Depends(get
         logger.warning(f"登录失败：username={username}, ip={ip}")
         raise HTTPException(status_code=401, detail="用户名或密码错误")
 
-    token = create_access_token(user.id, extra={"role": user.role, "username": user.username})
+    user.token_version += 1
+    db.commit()
+    token = create_access_token(
+        user.id,
+        extra={
+            "role": user.role,
+            "username": user.username,
+            "ver": user.token_version,
+        },
+    )
     for key in (ip, username):
         _login_failures.pop(key, None)
     _audit(db, user.id, user.username, "login", f"{user.username} 登录成功", ip)
