@@ -272,7 +272,7 @@ createApp({
       this.threadId = this.newThreadId();
       this.messages = [{ role: "bot", content: WELCOME }];
       if (this.currentUser) {
-        this.conversations.unshift({
+        this.conversations.push({
           thread_id: this.threadId, title: "新会话",
           created_at: new Date().toISOString(), msg_count: 0,
         });
