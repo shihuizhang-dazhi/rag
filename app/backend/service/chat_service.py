@@ -1,4 +1,5 @@
 import json
+import time
 from collections import OrderedDict
 
 from fastapi import Request
@@ -6,8 +7,11 @@ from fastapi.responses import StreamingResponse
 from langchain_chroma import Chroma
 from langchain_community.embeddings import DashScopeEmbeddings
 from openai import OpenAI
+from sqlalchemy.orm import Session
 
 from app.backend.config import settings
+from app.backend.db.models import Conversation
+from app.backend.db.session import SessionLocal
 from app.backend.logger import logger
 
 CLIENT = OpenAI(
@@ -15,31 +19,143 @@ CLIENT = OpenAI(
     base_url=settings.openai_base_url,
 )
 
-# ============ 对话记忆 ============
-# 内存级存储：thread_id → [{"role": "user"/"assistant", "content": "..."}]
-# 每轮对话 2 条消息（user + assistant），保留最近 10 轮
 MAX_HISTORY_TURNS = 10
-_conversations: dict[str, list[dict]] = {}
+MAX_USER_CONVERSATIONS = 5
+ANON_MAX_CONVERSATIONS = 100
+ANON_TTL_SECONDS = 1800
+
+# 匿名用户会话内存存储：thread_id → {"messages": [...], "last_access": timestamp}
+_anon_conversations: dict[str, dict] = {}
 
 
-def _get_history(thread_id: str) -> list[dict]:
-    """获取指定会话的历史消息。"""
-    return _conversations.get(thread_id, [])
+def _cleanup_anon():
+    """清理过期和超量的匿名会话。"""
+    now = time.time()
+    expired = [
+        tid for tid, v in _anon_conversations.items()
+        if now - v.get("last_access", 0) > ANON_TTL_SECONDS
+    ]
+    for tid in expired:
+        del _anon_conversations[tid]
+    if len(_anon_conversations) > ANON_MAX_CONVERSATIONS:
+        sorted_tids = sorted(
+            _anon_conversations.keys(),
+            key=lambda t: _anon_conversations[t].get("last_access", 0),
+        )
+        overflow = len(_anon_conversations) - ANON_MAX_CONVERSATIONS
+        for tid in sorted_tids[:overflow]:
+            del _anon_conversations[tid]
 
 
-def _save_turn(thread_id: str, question: str, answer: str):
-    """将一轮对话追加到历史，超限自动裁剪旧消息。"""
+def _get_history_anon(thread_id: str) -> list[dict]:
+    _cleanup_anon()
+    entry = _anon_conversations.get(thread_id)
+    if not entry:
+        return []
+    entry["last_access"] = time.time()
+    messages = entry.get("messages", [])
+    max_msgs = MAX_HISTORY_TURNS * 2
+    if len(messages) > max_msgs:
+        messages = messages[-max_msgs:]
+        entry["messages"] = messages
+    return messages
+
+
+def _save_turn_anon(thread_id: str, question: str, answer: str):
     if not thread_id:
         return
-    if thread_id not in _conversations:
-        _conversations[thread_id] = []
-    history = _conversations[thread_id]
-    history.append({"role": "user", "content": question})
-    history.append({"role": "assistant", "content": answer})
-    # 裁剪：保留最近 MAX_HISTORY_TURNS 轮（每轮 2 条）
+    _cleanup_anon()
+    if thread_id not in _anon_conversations:
+        _anon_conversations[thread_id] = {"messages": [], "last_access": time.time()}
+    history = _anon_conversations[thread_id]
+    messages = history["messages"]
+    messages.append({"role": "user", "content": question})
+    messages.append({"role": "assistant", "content": answer})
+    history["last_access"] = time.time()
     max_msgs = MAX_HISTORY_TURNS * 2
-    if len(history) > max_msgs:
-        _conversations[thread_id] = history[-max_msgs:]
+    if len(messages) > max_msgs:
+        history["messages"] = messages[-max_msgs:]
+
+
+def _get_history_db(user_id: int, thread_id: str) -> list[dict]:
+    """从数据库获取指定用户+会话的历史消息。"""
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(Conversation)
+            .filter(
+                Conversation.user_id == user_id,
+                Conversation.thread_id == thread_id,
+            )
+            .order_by(Conversation.id.asc())
+            .all()
+        )
+        messages = []
+        for r in rows:
+            messages.append({"role": r.role, "content": r.content})
+        max_msgs = MAX_HISTORY_TURNS * 2
+        if len(messages) > max_msgs:
+            messages = messages[-max_msgs:]
+        return messages
+    finally:
+        db.close()
+
+
+def _save_turn_db(user_id: int, thread_id: str, question: str, answer: str):
+    """将一轮对话持久化到数据库，超限自动清理旧消息。"""
+    if not thread_id:
+        return
+    db = SessionLocal()
+    try:
+        existing = (
+            db.query(Conversation)
+            .filter(Conversation.user_id == user_id, Conversation.thread_id == thread_id)
+            .first()
+        )
+        if not existing:
+            total_threads = (
+                db.query(Conversation.thread_id)
+                .filter(Conversation.user_id == user_id)
+                .distinct()
+                .count()
+            )
+            if total_threads >= MAX_USER_CONVERSATIONS:
+                raise RuntimeError(f"最多创建 {MAX_USER_CONVERSATIONS} 个对话，请先删除旧对话")
+        db.add(Conversation(user_id=user_id, thread_id=thread_id, role="user", content=question))
+        db.add(Conversation(user_id=user_id, thread_id=thread_id, role="assistant", content=answer))
+        db.commit()
+        _trim_history_db(db, user_id, thread_id)
+    finally:
+        db.close()
+
+
+def _trim_history_db(db: Session, user_id: int, thread_id: str):
+    """裁剪会话历史，保留最近 MAX_HISTORY_TURNS 轮。"""
+    max_msgs = MAX_HISTORY_TURNS * 2
+    count = (
+        db.query(Conversation)
+        .filter(
+            Conversation.user_id == user_id,
+            Conversation.thread_id == thread_id,
+        )
+        .count()
+    )
+    if count <= max_msgs:
+        return
+    to_delete = count - max_msgs
+    oldest = (
+        db.query(Conversation)
+        .filter(
+            Conversation.user_id == user_id,
+            Conversation.thread_id == thread_id,
+        )
+        .order_by(Conversation.id.asc())
+        .limit(to_delete)
+        .all()
+    )
+    for row in oldest:
+        db.delete(row)
+    db.commit()
 
 
 def _get_vector_store():
@@ -62,7 +178,6 @@ def _build_messages(question: str, context: str, history: list[dict] | None = No
             "即使资料中没涉及的内容，也请补充。\n\n参考资料：\n" + context
         )
     messages = [{"role": "system", "content": system}]
-    # 插入历史对话，让模型理解上下文（追问、指代消解）
     if history:
         messages.extend(history)
     messages.append({"role": "user", "content": question})
@@ -70,16 +185,13 @@ def _build_messages(question: str, context: str, history: list[dict] | None = No
 
 
 def _retrieve_context(question: str):
-    """从 Chroma 检索与问题相关的文本片段，返回 (context_string, sources_list)。"""
     try:
         vector_store = _get_vector_store()
         results = vector_store.similarity_search_with_score(question, k=settings.top_k)
 
         context_parts = []
-        # 用 OrderedDict 去重并保留来源顺序
         sources = OrderedDict()
         for doc, distance in results:
-            # Chroma 返回的是 cosine distance；转换成相似度（0~1）便于阈值比较和前端展示
             similarity = max(0.0, 1.0 - float(distance))
             if similarity < settings.score_threshold:
                 continue
@@ -93,14 +205,40 @@ def _retrieve_context(question: str):
         return "", []
 
 
-def _stream_chat(question: str, thread_id: str = "", request: Request | None = None):
-    """SSE 流式对话，带 RAG 检索增强 + 多轮对话记忆。"""
-    history = _get_history(thread_id) if thread_id else []
+def _stream_chat(question: str, thread_id: str = "", request: Request | None = None, user_id: int = 0):
+    if user_id and thread_id:
+        db = SessionLocal()
+        try:
+            has_existing = (
+                db.query(Conversation)
+                .filter(Conversation.user_id == user_id, Conversation.thread_id == thread_id)
+                .first()
+            )
+            if not has_existing:
+                total = (
+                    db.query(Conversation.thread_id)
+                    .filter(Conversation.user_id == user_id)
+                    .distinct()
+                    .count()
+                )
+                if total >= MAX_USER_CONVERSATIONS:
+                    async def err_stream():
+                        yield f"data: {json.dumps({'error': f'最多创建 {MAX_USER_CONVERSATIONS} 个对话，请先删除旧对话'}, ensure_ascii=False)}\n\n"
+                        yield "data: [DONE]\n\n"
+                    return StreamingResponse(err_stream(), media_type="text/event-stream")
+        finally:
+            db.close()
+
+    if user_id:
+        history = _get_history_db(user_id, thread_id) if thread_id else []
+    else:
+        history = _get_history_anon(thread_id) if thread_id else []
+
     context, sources = _retrieve_context(question)
     messages = _build_messages(question, context, history)
 
     if history:
-        logger.info(f"携带 {len(history)} 条历史消息，thread_id={thread_id}")
+        logger.info(f"携带 {len(history)} 条历史消息，thread_id={thread_id}, user_id={user_id or '匿名'}")
 
     completion = CLIENT.chat.completions.create(
         model=settings.openai_model_name,
@@ -131,7 +269,10 @@ def _stream_chat(question: str, thread_id: str = "", request: Request | None = N
             full_answer = "".join(answer_parts)
             if completed:
                 logger.info(f"模型输出：{full_answer}")
-                _save_turn(thread_id, question, full_answer)
+                if user_id:
+                    _save_turn_db(user_id, thread_id, question, full_answer)
+                else:
+                    _save_turn_anon(thread_id, question, full_answer)
 
                 if sources:
                     yield f"data: {json.dumps({'sources': sources}, ensure_ascii=False)}\n\n"
@@ -139,6 +280,6 @@ def _stream_chat(question: str, thread_id: str = "", request: Request | None = N
                 yield "data: [DONE]\n\n"
         except Exception as e:
             logger.error(f"streaming error: {e}")
-            yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'error': '服务繁忙，请稍后再试'}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream; charset=utf-8")

@@ -52,7 +52,15 @@ class AppSettings(BaseSettings):
     token_expire_minutes: int = 60 * 24  # access token 有效期，默认 24 小时
     # 启动时若 users 表为空，自动种入的默认管理员账号
     default_admin_username: str = "admin"
-    default_admin_password: str = "admin123"
+    default_admin_password: str = "change-in-production-please"
+
+    @field_validator("jwt_secret")
+    @classmethod
+    def check_jwt_secret(cls, v):
+        if v == "change-me-in-production-please":
+            import sys
+            print("\033[91m[WARN] JWT_SECRET 使用默认值，请立即在 .env 中设置随机密钥！\033[0m", file=sys.stderr)
+        return v
 
     # ============ 应用文案 ============
     system_prompt: str = (

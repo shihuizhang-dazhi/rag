@@ -23,6 +23,23 @@ from app.backend.service.vectorization_service import (
     process_document,
 )
 
+# 魔数签名白名单
+_MAGIC_SIGNATURES = {
+    ".pdf": b"%PDF",
+    ".txt": None,       # txt 无固定魔数，放行
+    ".csv": None,       # csv 无固定魔数，放行
+    ".md": None,        # md 无固定魔数，放行
+}
+
+
+def _check_magic_bytes(content: bytes, ext: str):
+    """校验文件头部魔数是否与扩展名一致。"""
+    sig = _MAGIC_SIGNATURES.get(ext)
+    if sig is None:
+        return
+    if not content.startswith(sig):
+        raise ValueError(f"文件内容与扩展名 {ext} 不匹配，拒绝上传")
+
 # 部分系统（如 Windows）对 .md / .csv 没有内置 MIME 映射，这里补充常用类型
 _EXT_MIME = {
     ".txt": "text/plain",
@@ -51,6 +68,9 @@ class DocumentService:
             raise ValueError(
                 f"不支持的文件类型: {ext}（支持 {', '.join(settings.supported_extensions)}）"
             )
+
+        # 魔数校验：防止伪造扩展名
+        _check_magic_bytes(content, ext)
 
         size = len(content)
         max_bytes = settings.max_file_size_mb * 1024 * 1024
@@ -117,7 +137,8 @@ class DocumentService:
         with SessionLocal() as session:
             query = session.query(Document)
             if keyword:
-                query = query.filter(Document.original_filename.like(f"%{keyword}%"))
+                safe_kw = keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                query = query.filter(Document.original_filename.like(f"%{safe_kw}%", escape="\\"))
 
             total = query.count()
 
