@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SecKB · 企业网络安全助手</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <div id="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+          </svg>
+        </div>
+        <div class="name">SEC · KB</div>
+      </div>
+
+      <nav class="nav">
+        <div class="nav-item" :class="{ active: view === 'chat' }" @click="view = 'chat'">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+          对话查询
+        </div>
+        <div class="nav-item" :class="{ active: view === 'docs' }" @click="view = 'docs'">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+          </svg>
+          文档管理
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button class="theme-toggle" @click="toggleTheme">
+          <svg v-if="!dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.2" y1="4.2" x2="5.6" y2="5.6"></line><line x1="18.4" y1="18.4" x2="19.8" y2="19.8"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.2" y1="19.8" x2="5.6" y2="18.4"></line><line x1="18.4" y1="5.6" x2="19.8" y2="4.2"></line>
+          </svg>
+          <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+          切换主题
+        </button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <template v-if="view === 'chat'">
+        <div class="page-header page-header-chat">
+          <div>
+            <span class="eyebrow">SecKB Assistant</span>
+            <h1>安全问答</h1>
+            <p>面向企业网络安全知识检索与问答的 RAG 助手</p>
+          </div>
+          <button class="btn btn-ghost" @click="clearHistory">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+            清空会话
+          </button>
+        </div>
+
+        <div class="chat-view">
+          <div class="messages-panel">
+            <div class="messages" ref="messages">
+              <div v-for="(m, i) in messages" :key="i" class="msg" :class="m.role">
+                <div class="icon">
+                  <svg v-if="m.role === 'bot'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                  <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                </div>
+                <div class="msg-body">
+                  <div v-if="m.role === 'bot'" class="bubble md" :class="{ cursor: m.streaming }" v-html="renderMd(m.content)"></div>
+                  <div v-else class="bubble">{{ m.content }}</div>
+                  <div class="sources" v-if="m.sources && m.sources.length">
+                    <span class="sources-label">来源：</span>
+                    <span class="source-chip" v-for="(s, si) in m.sources" :key="si" :title="'相关度 ' + s.score">
+                      {{ s.source || '未知文档' }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="composer-shell">
+              <div class="composer">
+                <div class="composer-inner">
+                  <textarea
+                    ref="input"
+                    v-model="draft"
+                    @input="autoGrow"
+                    @keydown="onKeydown"
+                    placeholder="输入安全问题，Enter 发送 · Shift+Enter 换行"
+                    rows="1"></textarea>
+                  <button v-if="isStreaming" class="stop-btn stop-btn-large" @click="stopStreaming">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+                    </svg>
+                    停止生成
+                  </button>
+                  <button v-else class="send-btn send-btn-large" :disabled="!draft.trim()" @click="send">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="22" y1="2" x2="11" y2="13"></line>
+                      <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                    发送
+                  </button>
+                </div>
+                <div class="composer-footer">
+                  <span class="composer-hint">Enter 发送 · Shift+Enter 换行</span>
+                  <span class="composer-state" :class="{ live: isStreaming }">{{ isStreaming ? '生成中…' : '就绪' }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template v-else>
+        <div class="page-header">
+          <div>
+            <span class="eyebrow">Knowledge Base</span>
+            <h1>文档管理</h1>
+            <p>上传文档、自动向量化，并在知识库中统一检索</p>
+          </div>
+          <button class="btn btn-primary" @click="triggerUpload">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            上传文档
+          </button>
+        </div>
+
+        <div class="doc-view">
+          <section class="doc-hero">
+            <div>
+              <span class="hero-kicker">上传 · 向量化 · 检索</span>
+              <h2>集中管理知识库文档</h2>
+              <p>支持拖拽上传与分页检索，上传完成后自动进入向量化流程。</p>
+            </div>
+            <div class="doc-hero-meta">
+              <span>{{ total }} 个文档</span>
+              <span>支持 .txt / .pdf / .csv / .md</span>
+            </div>
+          </section>
+
+          <div
+            class="dropzone"
+            :class="{ drag: dragging }"
+            @click="triggerUpload"
+            @dragover.prevent="dragging = true"
+            @dragleave.prevent="dragging = false"
+            @drop.prevent="onDrop">
+            <div class="plus">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+            </div>
+            <div class="t1">拖拽文件到此处或点击上传</div>
+            <div class="t2">支持 .txt, .pdf, .csv, .md 格式，单个文件不超过 50MB</div>
+            <input ref="file" type="file" multiple accept=".txt,.pdf,.csv,.md" style="display:none" @change="onPick" />
+          </div>
+
+          <div class="upload-list" v-if="uploadingFiles.length">
+            <div class="upload-item" v-for="(f, i) in uploadingFiles" :key="i">
+              <div class="upload-row">
+                <div class="upload-left">
+                  <div class="upload-meta">
+                    <div class="upload-name">{{ f.name }}</div>
+                    <div class="upload-size">{{ f.size }}</div>
+                  </div>
+                </div>
+                <span class="upload-status">
+                  {{ f.phase === 'vectorizing' ? '正在向量化中' : '上传中 ' + f.percent + '%' }}
+                </span>
+              </div>
+              <div class="progress">
+                <div
+                  class="progress-bar"
+                  :class="{ indet: f.phase === 'vectorizing' }"
+                  :style="f.phase === 'vectorizing' ? {} : { width: f.percent + '%' }"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section-bar">
+            <h2>已向量化文档</h2>
+            <div class="right">
+              <div class="search">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input :value="docSearchInput" @input="onDocSearchInput" placeholder="搜索文档名称..." />
+              </div>
+              <span class="count">{{ total }} 个文档</span>
+            </div>
+          </div>
+
+          <div class="doc-table">
+            <table v-if="docs.length">
+              <thead>
+                <tr>
+                  <th style="width:40%">文档名称</th>
+                  <th>大小</th>
+                  <th>上传时间</th>
+                  <th>状态</th>
+                  <th style="width:80px">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="doc in docs" :key="doc.id">
+                  <td>
+                    <div class="file-cell">
+                      <div class="fi">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                          <polyline points="14 2 14 8 20 8"></polyline>
+                        </svg>
+                      </div>
+                      {{ doc.name }}
+                    </div>
+                  </td>
+                  <td>{{ doc.size }}</td>
+                  <td>{{ doc.time }}</td>
+                  <td>
+                    <span class="tag ok">
+                      <span class="d"></span>
+                      已向量化
+                    </span>
+                  </td>
+                  <td><span class="row-action" @click="removeDoc(doc.id)">删除</span></td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div v-else class="empty">
+              <div class="ei">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                </svg>
+              </div>
+              <p>暂无文档，上传后将自动向量化存储</p>
+            </div>
+          </div>
+
+          <div class="pagination">
+            <span>显示 {{ rangeStart }}-{{ rangeEnd }} 条，共 {{ total }} 条</span>
+            <div class="pager">
+              <button class="pager-btn" @click="prevPage" :disabled="page <= 1">上一页</button>
+              <span class="pager-info">{{ page }} / {{ totalPages || 1 }}</span>
+              <button class="pager-btn" @click="nextPage" :disabled="page >= totalPages">下一页</button>
+            </div>
+            <label>每页显示
+              <select v-model.number="pageSize" @change="onPageSizeChange">
+                <option :value="10">10 条</option>
+                <option :value="20">20 条</option>
+                <option :value="50">50 条</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </template>
+    </main>
+  </div>
+
+  <script src="/static/js/vue.global.prod.js"></script>
+  <script src="/static/js/marked.min.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+# -*- coding: utf-8 -*-
+# pip install -r requirements.txt
+
+# ===== LangChain 生态（RAG 框架） =====
+langchain-community==0.4.2    # 社区集成：文档加载器、DashScope Embedding
+langchain-chroma==1.1.0       # Chroma 向量库集成
+langchain-text-splitters>=0.3 # 切分器：MarkdownHeaderTextSplitter、RecursiveCharacterTextSplitter
+
+# ===== 文档解析 =====
+pypdf==6.13.3                  # PyPDFLoader 依赖，PDF 文本提取
+
+# ===== 向量存储 =====
+chromadb>=1.4.1               # 向量数据库
+
+# ===== LLM / Embedding =====
+dashscope==1.25.23            # 阿里云百炼 SDK（Embedding 调用）
+openai>=1.0.0                 # OpenAI 兼容客户端（调用 DashScope 对话模型）
+
+# ===== Web 服务 =====
+fastapi==0.138.0              # Web 框架
+uvicorn==0.49.0               # ASGI 服务器
+python-multipart               # 文件上传解析
+
+# ===== 数据库 / 配置 =====
+SQLAlchemy==2.0.48            # ORM
+pydantic>=2                    # 数据校验
+pydantic-settings>=2           # .env 配置加载
+
+# ===== 日志 =====
+loguru
