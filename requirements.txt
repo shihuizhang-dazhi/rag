@@ -30,5 +30,6 @@ pydantic-settings>=2           # .env 配置加载
 loguru
 
 # ===== 认证鉴权 =====
+bcrypt==4.0.1              # 必须 pin 版本，4.1+ 与 passlib 不兼容
 passlib[bcrypt]             # 密码哈希
 python-jose[cryptography]   # JWT 签发与解析
