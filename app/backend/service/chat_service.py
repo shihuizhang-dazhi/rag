@@ -235,7 +235,8 @@ def _build_messages(question: str, context: str, history: list[dict] | None = No
     return messages
 
 
-def _retrieve_context(question: str):
+def _clean_source_name(name: str) -> str:
+    return re.sub(r"^第\d+篇\s*[:：]\s*", "", name)
     try:
         vector_store = _get_vector_store()
         results = vector_store.similarity_search_with_score(question, k=settings.top_k)
@@ -248,7 +249,7 @@ def _retrieve_context(question: str):
                 continue
             context_parts.append(doc.page_content)
             source = doc.metadata.get("source", "未知文档")
-            sources[source] = {"source": source, "score": round(similarity, 4)}
+            source = _clean_source_name(source)
 
         return "\n\n---\n\n".join(context_parts), list(sources.values()), len(context_parts)
     except Exception as e:
