@@ -29,9 +29,11 @@ MARKDOWN_HEADER_SPLITTER = MarkdownHeaderTextSplitter(
 
 
 def _get_embeddings():
+    api_key = settings.embedding_api_key or settings.openai_api_key
+    base_url = settings.embedding_base_url or settings.openai_base_url
     return OpenAIEmbeddings(
-        api_key=settings.openai_api_key,
-        base_url=settings.openai_base_url,
+        api_key=api_key,
+        base_url=base_url,
         model=settings.embedding_model,
         check_embedding_ctx_length=False,
         chunk_size=10,

@@ -30,6 +30,8 @@ class AppSettings(BaseSettings):
     openai_api_key: str
     openai_base_url: str
     openai_model_name: str
+    embedding_api_key: str = ""
+    embedding_base_url: str = ""
     embedding_model: str
 
     # ============ 文档解析 / 检索参数 ============

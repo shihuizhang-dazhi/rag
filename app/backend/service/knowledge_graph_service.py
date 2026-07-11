@@ -2,6 +2,8 @@ import json
 import re
 from pathlib import Path
 
+from sqlalchemy import func, or_ as db_or
+
 from app.backend.config import settings
 from app.backend.db.models import GraphEntity, GraphRelation
 from app.backend.db.session import SessionLocal
@@ -38,6 +40,29 @@ def _clean_json(text: str) -> str:
 
 def _chunk_text(text: str, size: int = 2000) -> list[str]:
     return [text[i:i + size] for i in range(0, len(text), size)]
+
+
+_QUERY_STOP_WORDS = {"的", "了", "是", "在", "我", "有", "和", "就", "不", "人", "都", "一", "一个",
+                     "这", "他", "也", "与", "及", "或", "以及", "什么", "怎么", "如何", "哪些",
+                     "为什么", "哪", "吗", "呢", "吧", "啊", "哦", "呀", "哟"}
+
+
+def _extract_key_terms(query: str) -> list[str]:
+    for stop in ["有哪些", "是什么", "怎么样", "如何做", "为什么", "怎么办",
+                 "什么", "怎么", "如何", "哪些", "哪", "哪个"]:
+        query = query.replace(stop, " ")
+    for sep in [" ", "，", "。", "？", "！", "；", "：", ",", ".", "?", "!",
+                ";", ":", "\n", "\t", "、", "（", "）", "(", ")"]:
+        query = query.replace(sep, "|")
+    parts = query.split("|")
+    terms = []
+    for p in parts:
+        p = p.strip()
+        if len(p) >= 2 and p not in _QUERY_STOP_WORDS:
+            terms.append(p)
+    if not terms and len(query.strip()) >= 2:
+        terms = [query.strip()]
+    return terms[:5]
 
 
 def _load_text(file_path: str, mime_type: str | None) -> str:
@@ -219,7 +244,7 @@ class KnowledgeGraphService:
         try:
             total_entities = db.query(GraphEntity).count()
             total_relations = db.query(GraphRelation).count()
-            rows = db.query(GraphEntity.label, db.func.count(GraphEntity.id)).group_by(GraphEntity.label).all()
+            rows = db.query(GraphEntity.label, func.count(GraphEntity.id)).group_by(GraphEntity.label).all()
             by_label = {row[0]: row[1] for row in rows}
             return {"total_entities": total_entities, "total_relations": total_relations, "by_label": by_label}
         finally:
@@ -279,12 +304,37 @@ class KnowledgeGraphService:
             depth = 1
         db = SessionLocal()
         try:
-            matched = (
-                db.query(GraphEntity)
-                .filter(GraphEntity.name.like(f"%{query}%"))
-                .limit(20)
-                .all()
-            )
+            if not query or not query.strip():
+                matched = db.query(GraphEntity).limit(100).all()
+                all_entity_ids = {e.id for e in matched}
+                all_relations = db.query(GraphRelation).filter(
+                    GraphRelation.source_entity_id.in_(all_entity_ids) |
+                    GraphRelation.target_entity_id.in_(all_entity_ids)
+                ).all()
+                return {
+                    "entities": [e.to_dict() for e in matched],
+                    "relations": [r.to_dict() for r in all_relations],
+                }
+
+            terms = _extract_key_terms(query)
+            matched = []
+            seen = set()
+            conditions = []
+            for t in terms:
+                conditions.append(GraphEntity.name.like(f"%{t}%"))
+            if conditions:
+                matched = db.query(GraphEntity).filter(db_or(*conditions)).limit(20).all()
+                seen = {e.id for e in matched}
+            if not matched:
+                all_entities = db.query(GraphEntity.id, GraphEntity.name).all()
+                for eid, ename in all_entities:
+                    if eid in seen:
+                        continue
+                    if ename and ename.lower() in query.lower():
+                        entity = db.query(GraphEntity).filter(GraphEntity.id == eid).first()
+                        if entity:
+                            matched.append(entity)
+                            seen.add(eid)
             if not matched:
                 return {"entities": [], "relations": []}
 

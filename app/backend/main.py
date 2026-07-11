@@ -641,7 +641,7 @@ def get_graph_entity(entity_id: int, current: User = Depends(get_current_user)):
 
 @app.get("/graph/search")
 def search_graph(
-    q: str = Query(..., min_length=1),
+    q: str = Query(default=""),
     depth: int = Query(1, ge=1, le=3),
     current: User = Depends(get_current_user),
 ):

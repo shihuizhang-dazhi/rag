@@ -187,11 +187,13 @@ _vector_store_cache = None
 def _get_vector_store():
     global _vector_store_cache
     if _vector_store_cache is None:
+        ek = settings.embedding_api_key or settings.openai_api_key
+        eb = settings.embedding_base_url or settings.openai_base_url
         _vector_store_cache = Chroma(
             persist_directory=settings.chroma_path,
             embedding_function=OpenAIEmbeddings(
-                api_key=settings.openai_api_key,
-                base_url=settings.openai_base_url,
+                api_key=ek,
+                base_url=eb,
                 model=settings.embedding_model,
                 check_embedding_ctx_length=False,
                 chunk_size=10,

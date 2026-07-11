@@ -86,6 +86,13 @@ createApp({
       // 知识图谱
       graphQuery: "",
       graphNetwork: null,
+      graphLoading: false,
+      graphError: "",
+      LABEL_COLORS: {
+        "漏洞": "#f87171", "攻击手法": "#fb923c", "安全工具": "#a78bfa",
+        "网络协议": "#60a5fa", "防御措施": "#34d399", "合规标准": "#fbbf24",
+        "威胁组织": "#f472b6",
+      },
     };
   },
   async mounted() {
@@ -635,19 +642,18 @@ createApp({
     },
 
     // ===== 知识图谱 =====
-    LABEL_COLORS: {
-      "漏洞": "#f87171", "攻击手法": "#fb923c", "安全工具": "#a78bfa",
-      "网络协议": "#60a5fa", "防御措施": "#34d399", "合规标准": "#fbbf24",
-      "威胁组织": "#f472b6",
-    },
     async loadGraphData() {
-      if (this.graphNetwork) return;
+      this.graphLoading = true;
+      this.graphError = "";
       try {
         const r = await this.apiFetchAuth("/graph/search?q=&depth=1");
-        if (!r.ok) return;
+        if (!r.ok) { this.graphError = "加载失败: HTTP " + r.status; return; }
         const data = await r.json();
+        if (!data.entities || !data.entities.length) { this.graphError = "暂无图谱数据，请先上传文档"; return; }
+        await this.$nextTick();
         this.renderGraph(data);
-      } catch (e) { console.error("加载图谱失败:", e); }
+      } catch (e) { this.graphError = "加载失败: " + e.message; console.error("加载图谱失败:", e); }
+      finally { this.graphLoading = false; }
     },
     async searchGraph() {
       const q = this.graphQuery.trim();
@@ -662,6 +668,11 @@ createApp({
     renderGraph(data) {
       const entities = data.entities || [];
       const relations = data.relations || [];
+      const container = this.$refs.graphContainer;
+      if (!container) { console.error("graphContainer ref 不存在"); return; }
+      if (container.clientWidth === 0 || container.clientHeight === 0) { console.error("graphContainer 尺寸为0"); return; }
+      if (typeof vis === "undefined") { console.error("vis-network 未加载"); return; }
+      if (this.graphNetwork) { this.graphNetwork.destroy(); this.graphNetwork = null; }
       const nodes = new vis.DataSet(entities.map(e => ({
         id: e.id,
         label: e.name,
@@ -680,8 +691,6 @@ createApp({
         font: { color: "#94a3b8", size: 10, strokeWidth: 0 },
         width: 1,
       })));
-      const container = this.$refs.graphContainer;
-      if (!container) return;
       const options = {
         physics: { solver: "forceAtlas2Based", forceAtlas2Based: { gravitationalConstant: -50, centralGravity: 0.01 } },
         interaction: { hover: true, tooltipDelay: 200 },
