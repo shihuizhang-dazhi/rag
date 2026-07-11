@@ -223,36 +223,46 @@ def list_conversations(
             Conversation.thread_id,
             func.min(Conversation.created_at).label("created_at"),
             func.count(Conversation.id).label("msg_count"),
+            ConversationMeta.title,
+        )
+        .outerjoin(
+            ConversationMeta,
+            (ConversationMeta.user_id == Conversation.user_id)
+            & (ConversationMeta.thread_id == Conversation.thread_id),
         )
         .filter(Conversation.user_id == current.id)
         .group_by(Conversation.thread_id)
         .order_by(func.min(Conversation.created_at).desc())
         .all()
     )
+
+    threads_without_title = [t for t in threads if not t.title]
+    first_msg_map = {}
+    if threads_without_title:
+        tids = [t.thread_id for t in threads_without_title]
+        subq = (
+            db.query(
+                Conversation.thread_id,
+                func.min(Conversation.id).label("min_id"),
+            )
+            .filter(
+                Conversation.user_id == current.id,
+                Conversation.role == "user",
+                Conversation.thread_id.in_(tids),
+            )
+            .group_by(Conversation.thread_id)
+            .subquery()
+        )
+        rows = (
+            db.query(Conversation.thread_id, Conversation.content)
+            .join(subq, Conversation.id == subq.c.min_id)
+            .all()
+        )
+        first_msg_map = {row.thread_id: row.content for row in rows}
+
     result = []
     for t in threads:
-        meta = (
-            db.query(ConversationMeta)
-            .filter(
-                ConversationMeta.user_id == current.id,
-                ConversationMeta.thread_id == t.thread_id,
-            )
-            .first()
-        )
-        if meta:
-            title = meta.title
-        else:
-            first_msg = (
-                db.query(Conversation.content)
-                .filter(
-                    Conversation.user_id == current.id,
-                    Conversation.thread_id == t.thread_id,
-                    Conversation.role == "user",
-                )
-                .order_by(Conversation.id.asc())
-                .first()
-            )
-            title = (first_msg[0] if first_msg else "新会话")[:50]
+        title = t.title or (first_msg_map.get(t.thread_id, "新会话")[:50])
         result.append({
             "thread_id": t.thread_id,
             "title": title,
@@ -599,6 +609,56 @@ def clear_all_audit_logs(
     _audit(db, current.id, current.username, "audit_clear_all", f"清空全部 {total} 条审计日志", _client_ip(request))
     logger.info(f"管理员 {current.username} 清空全部审计日志（{total} 条）")
     return {"detail": f"已清空全部 {total} 条日志", "deleted": total}
+
+
+# ============ 知识图谱 ============
+@app.get("/graph/stats")
+def graph_stats(current: User = Depends(get_current_user)):
+    from app.backend.service.knowledge_graph_service import kg_service
+    return kg_service.get_stats()
+
+
+@app.get("/graph/entities")
+def list_graph_entities(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    label: str | None = Query(None),
+    keyword: str | None = Query(None),
+    current: User = Depends(get_current_user),
+):
+    from app.backend.service.knowledge_graph_service import kg_service
+    return kg_service.query_entities(page=page, page_size=page_size, label=label, keyword=keyword)
+
+
+@app.get("/graph/entities/{entity_id}")
+def get_graph_entity(entity_id: int, current: User = Depends(get_current_user)):
+    from app.backend.service.knowledge_graph_service import kg_service
+    result = kg_service.get_entity(entity_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="实体不存在")
+    return result
+
+
+@app.get("/graph/search")
+def search_graph(
+    q: str = Query(..., min_length=1),
+    depth: int = Query(1, ge=1, le=3),
+    current: User = Depends(get_current_user),
+):
+    from app.backend.service.knowledge_graph_service import kg_service
+    return kg_service.search_graph(q, depth=depth)
+
+
+@app.post("/graph/rebuild")
+def rebuild_graph(
+    doc_id: int = Body(..., embed=True),
+    current: User = Depends(require_role("admin")),
+):
+    from app.backend.service.knowledge_graph_service import kg_service
+    ok = kg_service.rebuild(doc_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="文档不存在或文件已丢失")
+    return {"detail": "图谱重建成功"}
 
 
 # ============ 前端入口 & 静态资源 ============

@@ -83,6 +83,9 @@ createApp({
       conversations: [],
       editingConvId: null,
       editingConvTitle: "",
+      // 知识图谱
+      graphQuery: "",
+      graphNetwork: null,
     };
   },
   async mounted() {
@@ -213,7 +216,11 @@ createApp({
             for (let i = 0; i < raw.length; i += 2) {
               const u = raw[i], b = raw[i + 1];
               if (u && u.role === "user") result.push({ role: "user", content: u.content });
-              if (b && b.role === "assistant") result.push({ role: "bot", content: b.content, sources: b.sources || [] });
+              if (b && b.role === "assistant") result.push({
+                role: "bot", content: b.content,
+                sources: b.sources || [],
+                graphSources: b.graph_sources || [],
+              });
             }
             if (result.length > 0) msgs = result;
           }
@@ -326,7 +333,7 @@ createApp({
       this.messages.push({ role: "user", content: text });
       this.draft = "";
       if (this.$refs.input) this.$refs.input.style.height = "auto";
-      this.messages.push({ role: "bot", content: "", streaming: true, sources: [] });
+      this.messages.push({ role: "bot", content: "", streaming: true, sources: [], graphSources: [] });
       const bot = this.messages[this.messages.length - 1];
       this.scrollToBottom();
       this.isStreaming = true;
@@ -362,7 +369,11 @@ createApp({
             let data;
             try { data = JSON.parse(payload); } catch (e) { continue; }
             if (data.error) { bot.content += "\n[出错] " + data.error; }
-            else if (data.sources) { bot.sources = data.sources; this.scrollToBottom(); }
+            else if (data.sources || data.graph_sources) {
+              if (data.sources) bot.sources = data.sources;
+              if (data.graph_sources) bot.graphSources = data.graph_sources;
+              this.scrollToBottom();
+            }
             else if (data.content) { bot.content += data.content; this.scrollToBottom(); }
           }
         }
@@ -377,7 +388,18 @@ createApp({
         if (this.stopRequested && !bot.content) this.messages = this.messages.filter((m) => m !== bot);
         this.stopRequested = false;
         this.saveSession();
-        if (this.currentUser) this.loadConversations();
+        if (this.currentUser) {
+          const conv = this.conversations.find(c => c.thread_id === this.threadId);
+          if (conv) {
+            conv.msg_count = this.messages.filter(m => m.role !== "bot" || (m.role === "bot" && !m._welcome)).length;
+            if (conv.title === "新会话") {
+              const first = this.messages.find(m => m.role === "user");
+              if (first) conv.title = first.content.slice(0, 50);
+            }
+          } else {
+            this.loadConversations();
+          }
+        }
         this.$nextTick(() => this.$refs.input && this.$refs.input.focus());
       }
     },
@@ -483,6 +505,25 @@ createApp({
       const d = document.createElement("div");
       d.textContent = text;
       return d.innerHTML;
+    },
+    async copyMessage(idx) {
+      const m = this.messages[idx];
+      if (!m || !m.content) return;
+      try {
+        await navigator.clipboard.writeText(m.content);
+        this.$set(m, "_copied", true);
+        setTimeout(() => { if (m._copied) { this.$set(m, "_copied", false); } }, 1500);
+      } catch (e) {
+        const ta = document.createElement("textarea");
+        ta.value = m.content;
+        ta.style.position = "fixed"; ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        this.$set(m, "_copied", true);
+        setTimeout(() => { if (m._copied) { this.$set(m, "_copied", false); } }, 1500);
+      }
     },
     formatSize(bytes) {
       if (bytes < 1024) return bytes + " B";
@@ -591,6 +632,83 @@ createApp({
         this.auditPage = 1;
         this.loadAuditLogs();
       } catch (e) { alert("清空失败：" + e.message); }
+    },
+
+    // ===== 知识图谱 =====
+    LABEL_COLORS: {
+      "漏洞": "#f87171", "攻击手法": "#fb923c", "安全工具": "#a78bfa",
+      "网络协议": "#60a5fa", "防御措施": "#34d399", "合规标准": "#fbbf24",
+      "威胁组织": "#f472b6",
+    },
+    async loadGraphData() {
+      if (this.graphNetwork) return;
+      try {
+        const r = await this.apiFetchAuth("/graph/search?q=&depth=1");
+        if (!r.ok) return;
+        const data = await r.json();
+        this.renderGraph(data);
+      } catch (e) { console.error("加载图谱失败:", e); }
+    },
+    async searchGraph() {
+      const q = this.graphQuery.trim();
+      if (!q) return;
+      try {
+        const r = await this.apiFetchAuth("/graph/search?q=" + encodeURIComponent(q) + "&depth=1");
+        if (!r.ok) return;
+        const data = await r.json();
+        this.renderGraph(data);
+      } catch (e) { console.error("图谱搜索失败:", e); }
+    },
+    renderGraph(data) {
+      const entities = data.entities || [];
+      const relations = data.relations || [];
+      const nodes = new vis.DataSet(entities.map(e => ({
+        id: e.id,
+        label: e.name,
+        color: { background: this.LABEL_COLORS[e.label] || "#94a3b8", border: "#0f172a" },
+        font: { color: "#e2e8f0", size: 12 },
+        borderWidth: 2,
+        shape: "dot",
+        size: 18,
+      })));
+      const edges = new vis.DataSet(relations.map(r => ({
+        from: r.source_entity_id,
+        to: r.target_entity_id,
+        label: r.relation,
+        arrows: "to",
+        color: { color: "#475569", highlight: "#5eead4" },
+        font: { color: "#94a3b8", size: 10, strokeWidth: 0 },
+        width: 1,
+      })));
+      const container = this.$refs.graphContainer;
+      if (!container) return;
+      const options = {
+        physics: { solver: "forceAtlas2Based", forceAtlas2Based: { gravitationalConstant: -50, centralGravity: 0.01 } },
+        interaction: { hover: true, tooltipDelay: 200 },
+        nodes: { font: { face: "var(--ui)" } },
+      };
+      this.graphNetwork = new vis.Network(container, { nodes, edges }, options);
+      this.graphNetwork.on("doubleClick", async (params) => {
+        if (params.nodes.length > 0) {
+          try {
+            const r = await this.apiFetchAuth("/graph/entities/" + params.nodes[0]);
+            if (!r.ok) return;
+            const sub = await r.json();
+            const existIds = new Set(nodes.getIds());
+            (sub.neighbors || []).forEach(n => {
+              if (!existIds.has(n.id)) {
+                nodes.add({ id: n.id, label: n.name, color: { background: this.LABEL_COLORS[n.label] || "#94a3b8", border: "#0f172a" }, font: { color: "#e2e8f0", size: 12 }, borderWidth: 2, shape: "dot", size: 18 });
+                existIds.add(n.id);
+              }
+            });
+            (sub.relations || []).forEach(r => {
+              const eid = r.source_entity_id + "_" + r.target_entity_id + "_" + r.relation;
+              if (edges.get(eid)) return;
+              edges.add({ id: eid, from: r.source_entity_id, to: r.target_entity_id, label: r.relation, arrows: "to", color: { color: "#475569", highlight: "#5eead4" }, font: { color: "#94a3b8", size: 10, strokeWidth: 0 }, width: 1 });
+            });
+          } catch (e) { console.error("加载邻居节点失败:", e); }
+        }
+      });
     },
   },
 }).mount("#app");

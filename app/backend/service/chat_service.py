@@ -61,7 +61,8 @@ def _get_history_anon(thread_id: str) -> list[dict]:
     return messages
 
 
-def _save_turn_anon(thread_id: str, question: str, answer: str, sources: list | None = None):
+def _save_turn_anon(thread_id: str, question: str, answer: str, sources: list | None = None,
+                     graph_sources: list | None = None):
     if not thread_id:
         return
     _cleanup_anon()
@@ -73,6 +74,8 @@ def _save_turn_anon(thread_id: str, question: str, answer: str, sources: list | 
     bot_msg = {"role": "assistant", "content": answer}
     if sources:
         bot_msg["sources"] = sources
+    if graph_sources:
+        bot_msg["graph_sources"] = graph_sources
     messages.append(bot_msg)
     history["last_access"] = time.time()
     max_msgs = MAX_HISTORY_TURNS * 2
@@ -97,7 +100,14 @@ def _get_history_db(user_id: int, thread_id: str) -> list[dict]:
             msg = {"role": r.role, "content": r.content}
             if r.sources:
                 try:
-                    msg["sources"] = json.loads(r.sources)
+                    parsed = json.loads(r.sources)
+                    if isinstance(parsed, list):
+                        msg["sources"] = parsed
+                    elif isinstance(parsed, dict):
+                        if "sources" in parsed:
+                            msg["sources"] = parsed["sources"]
+                        if "graph_sources" in parsed:
+                            msg["graph_sources"] = parsed["graph_sources"]
                 except (json.JSONDecodeError, TypeError):
                     pass
             messages.append(msg)
@@ -109,7 +119,8 @@ def _get_history_db(user_id: int, thread_id: str) -> list[dict]:
         db.close()
 
 
-def _save_turn_db(user_id: int, thread_id: str, question: str, answer: str, sources: list | None = None):
+def _save_turn_db(user_id: int, thread_id: str, question: str, answer: str,
+                   sources: list | None = None, graph_sources: list | None = None):
     if not thread_id:
         return
     db = SessionLocal()
@@ -129,7 +140,12 @@ def _save_turn_db(user_id: int, thread_id: str, question: str, answer: str, sour
             if total_threads >= MAX_USER_CONVERSATIONS:
                 raise RuntimeError(f"最多创建 {MAX_USER_CONVERSATIONS} 个对话，请先删除旧对话")
         db.add(Conversation(user_id=user_id, thread_id=thread_id, role="user", content=question))
-        sources_json = json.dumps(sources, ensure_ascii=False) if sources else None
+        combined = {}
+        if sources:
+            combined["sources"] = sources
+        if graph_sources:
+            combined["graph_sources"] = graph_sources
+        sources_json = json.dumps(combined, ensure_ascii=False) if combined else None
         db.add(Conversation(user_id=user_id, thread_id=thread_id, role="assistant", content=answer, sources=sources_json))
         db.commit()
         _trim_history_db(db, user_id, thread_id)
@@ -165,18 +181,24 @@ def _trim_history_db(db: Session, user_id: int, thread_id: str):
     db.commit()
 
 
+_vector_store_cache = None
+
+
 def _get_vector_store():
-    return Chroma(
-        persist_directory=settings.chroma_path,
-        embedding_function=OpenAIEmbeddings(
-            api_key=settings.openai_api_key,
-            base_url=settings.openai_base_url,
-            model=settings.embedding_model,
-            check_embedding_ctx_length=False,
-            chunk_size=10,
-        ),
-        collection_name=settings.chroma_collection_name,
-    )
+    global _vector_store_cache
+    if _vector_store_cache is None:
+        _vector_store_cache = Chroma(
+            persist_directory=settings.chroma_path,
+            embedding_function=OpenAIEmbeddings(
+                api_key=settings.openai_api_key,
+                base_url=settings.openai_base_url,
+                model=settings.embedding_model,
+                check_embedding_ctx_length=False,
+                chunk_size=10,
+            ),
+            collection_name=settings.chroma_collection_name,
+        )
+    return _vector_store_cache
 
 
 INJECTION_PATTERNS = [
@@ -266,10 +288,36 @@ def _retrieve_context(question: str):
             source = _clean_source_name(source)
             sources[source] = {"source": source, "score": round(similarity, 4)}
 
-        return "\n\n---\n\n".join(context_parts), list(sources.values()), len(context_parts)
+        graph_sources = []
+        if settings.kg_enabled:
+            try:
+                from app.backend.service.knowledge_graph_service import kg_service
+                graph_data = kg_service.search_graph(question, depth=settings.kg_graph_search_depth)
+                if graph_data.get("relations"):
+                    lines = ["\n## 知识图谱关联信息"]
+                    for r in graph_data["relations"]:
+                        s_name = _get_entity_name(graph_data["entities"], r["source_entity_id"])
+                        t_name = _get_entity_name(graph_data["entities"], r["target_entity_id"])
+                        if s_name and t_name:
+                            lines.append(f"- {s_name} --{r['relation']}--> {t_name}")
+                    if len(lines) > 1:
+                        context_parts.append("\n".join(lines))
+                    graph_sources = graph_data["relations"]
+            except Exception as e:
+                logger.error(f"图检索失败: {e}")
+
+        context = "\n\n---\n\n".join(context_parts)
+        return context, list(sources.values()), graph_sources, len(context_parts)
     except Exception as e:
         logger.error(f"检索失败：{e}")
-        return "", [], 0
+        return "", [], [], 0
+
+
+def _get_entity_name(entities: list, eid: int) -> str | None:
+    for e in entities:
+        if e.get("id") == eid:
+            return e.get("name", "")
+    return None
 
 
 def _get_thread_summary(user_id: int, thread_id: str) -> str:
@@ -379,7 +427,7 @@ def _stream_chat(question: str, thread_id: str = "", request: Request | None = N
             _save_thread_summary(user_id, thread_id, summary)
         history = recent_msgs
 
-    context, sources, chunk_count = _retrieve_context(question)
+    context, sources, graph_sources, chunk_count = _retrieve_context(question)
     messages = _build_messages(question, context, history, chunk_count, summary)
 
     if history:
@@ -423,12 +471,17 @@ def _stream_chat(question: str, thread_id: str = "", request: Request | None = N
                 if _check_output(full_answer):
                     logger.warning("模型输出疑似越狱，跳过历史记录保存")
                 elif user_id:
-                    _save_turn_db(user_id, thread_id, question, full_answer, sources)
+                    _save_turn_db(user_id, thread_id, question, full_answer, sources, graph_sources)
                 else:
-                    _save_turn_anon(thread_id, question, full_answer, sources)
+                    _save_turn_anon(thread_id, question, full_answer, sources, graph_sources)
 
-                if sources:
-                    yield f"data: {json.dumps({'sources': sources}, ensure_ascii=False)}\n\n"
+                if sources or graph_sources:
+                    payload = {}
+                    if sources:
+                        payload["sources"] = sources
+                    if graph_sources:
+                        payload["graph_sources"] = graph_sources
+                    yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
                 yield "data: [DONE]\n\n"
         except Exception as e:

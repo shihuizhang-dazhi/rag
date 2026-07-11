@@ -59,6 +59,14 @@ class AppSettings(BaseSettings):
     cors_origins: Annotated[list[str], NoDecode] = ["*"]
     enable_docs: bool = True  # 生产环境建议关闭
 
+    # ============ 知识图谱 ============
+    kg_enabled: bool = False
+    kg_entity_labels: str = '["漏洞","攻击手法","安全工具","网络协议","防御措施","合规标准","威胁组织"]'
+    kg_relation_types: str = '["利用","缓解","依赖","属于","检测","变种","参考","影响"]'
+    kg_max_entities_per_doc: int = 200
+    kg_graph_search_depth: int = 1
+    kg_chunk_size: int = 2000
+
     @field_validator("jwt_secret")
     @classmethod
     def check_jwt_secret(cls, v):

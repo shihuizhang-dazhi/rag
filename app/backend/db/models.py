@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, func
+from sqlalchemy import Boolean, Column, DateTime, Index, Integer, String, Text, func
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
@@ -17,6 +17,7 @@ class Document(Base):
     mime_type = Column(String(128), nullable=True, comment="MIME 类型")
     storage_path = Column(String(512), nullable=False, comment="服务器存储路径")
     is_vectorized = Column(Boolean, default=False, comment="是否已完成向量化")
+    is_graph_extracted = Column(Boolean, default=False, comment="是否已完成知识图谱抽取")
     created_at = Column(DateTime, default=func.now(), comment="创建时间")
 
     def to_dict(self) -> dict:
@@ -26,6 +27,7 @@ class Document(Base):
             "file_size": self.file_size,
             "mime_type": self.mime_type,
             "is_vectorized": self.is_vectorized,
+            "is_graph_extracted": self.is_graph_extracted,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -60,6 +62,10 @@ class Conversation(Base):
     """对话历史表：按 user_id + thread_id 隔离不同用户的会话。"""
 
     __tablename__ = "conversations"
+    __table_args__ = (
+        Index("idx_conv_user_thread", "user_id", "thread_id"),
+        Index("idx_conv_user_role_thread", "user_id", "role", "thread_id"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, nullable=False, index=True, comment="所属用户 ID")
@@ -85,6 +91,9 @@ class ConversationMeta(Base):
     """会话元数据：存储用户自定义的会话标题。"""
 
     __tablename__ = "conversation_meta"
+    __table_args__ = (
+        Index("idx_meta_user_thread", "user_id", "thread_id"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, nullable=False, index=True, comment="所属用户 ID")
@@ -123,4 +132,60 @@ class AuditLog(Base):
             "detail": self.detail,
             "ip": self.ip,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class GraphEntity(Base):
+    """知识图谱：实体节点。"""
+
+    __tablename__ = "graph_entities"
+    __table_args__ = (
+        Index("idx_ge_name", "name"),
+        Index("idx_ge_label", "label"),
+        Index("idx_ge_doc", "doc_id"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(255), nullable=False, comment="实体名称")
+    label = Column(String(64), nullable=False, comment="实体类型")
+    doc_id = Column(Integer, nullable=False, comment="来源文档 ID")
+    metadata_json = Column(Text, nullable=True, comment="额外元数据 JSON")
+    created_at = Column(DateTime, default=func.now())
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "label": self.label,
+            "doc_id": self.doc_id,
+            "metadata_json": self.metadata_json,
+        }
+
+
+class GraphRelation(Base):
+    """知识图谱：关系边。"""
+
+    __tablename__ = "graph_relations"
+    __table_args__ = (
+        Index("idx_gr_src", "source_entity_id"),
+        Index("idx_gr_tgt", "target_entity_id"),
+        Index("idx_gr_doc", "doc_id"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    source_entity_id = Column(Integer, nullable=False, comment="起始实体 ID")
+    target_entity_id = Column(Integer, nullable=False, comment="目标实体 ID")
+    relation = Column(String(128), nullable=False, comment="关系类型")
+    doc_id = Column(Integer, nullable=False, comment="来源文档 ID")
+    metadata_json = Column(Text, nullable=True, comment="额外元数据 JSON")
+    created_at = Column(DateTime, default=func.now())
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "source_entity_id": self.source_entity_id,
+            "target_entity_id": self.target_entity_id,
+            "relation": self.relation,
+            "doc_id": self.doc_id,
+            "metadata_json": self.metadata_json,
         }

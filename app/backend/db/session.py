@@ -20,7 +20,27 @@ def init_db() -> None:
     _migrate_add_token_version()
     _migrate_add_conversation_sources()
     _migrate_add_conversation_meta_summary()
+    _migrate_add_composite_indexes()
+    _migrate_add_graph_extraction_flag()
     _seed_default_users()
+
+
+def _migrate_add_composite_indexes() -> None:
+    with engine.connect() as conn:
+        indexes = {row[1] for row in conn.execute(text("PRAGMA index_list(conversations)")).fetchall()}
+        if "idx_conv_user_thread" not in indexes:
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_conv_user_thread ON conversations(user_id, thread_id)"))
+            conn.commit()
+            logger.info("数据库迁移：已添加 conversations(user_id, thread_id) 复合索引")
+        if "idx_conv_user_role_thread" not in indexes:
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_conv_user_role_thread ON conversations(user_id, role, thread_id)"))
+            conn.commit()
+            logger.info("数据库迁移：已添加 conversations(user_id, role, thread_id) 复合索引")
+        meta_indexes = {row[1] for row in conn.execute(text("PRAGMA index_list(conversation_meta)")).fetchall()}
+        if "idx_meta_user_thread" not in meta_indexes:
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_meta_user_thread ON conversation_meta(user_id, thread_id)"))
+            conn.commit()
+            logger.info("数据库迁移：已添加 conversation_meta(user_id, thread_id) 复合索引")
 
 
 def _migrate_add_token_version() -> None:
@@ -49,6 +69,15 @@ def _migrate_add_conversation_meta_summary() -> None:
             conn.execute(text("ALTER TABLE conversation_meta ADD COLUMN summary TEXT"))
             conn.commit()
             logger.info("数据库迁移：已为 conversation_meta 表添加 summary 列")
+
+
+def _migrate_add_graph_extraction_flag() -> None:
+    with engine.connect() as conn:
+        cols = {row[1] for row in conn.execute(text("PRAGMA table_info(documents)")).fetchall()}
+        if "is_graph_extracted" not in cols:
+            conn.execute(text("ALTER TABLE documents ADD COLUMN is_graph_extracted BOOLEAN NOT NULL DEFAULT 0"))
+            conn.commit()
+            logger.info("数据库迁移：已为 documents 表添加 is_graph_extracted 列")
 
 
 def _seed_default_users() -> None:

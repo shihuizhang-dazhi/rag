@@ -146,8 +146,7 @@ class DocumentService:
             session.commit()
             session.refresh(doc)
 
-            # ---- 向量化入库（补上 docstring 承诺但原代码遗漏的步骤）----
-            # 文件已落盘入库，向量化失败不阻断上传，仅标记 is_vectorized=False 并由日志告警
+            # ---- 向量化入库 ----
             try:
                 ok = process_document(doc.id, storage_path, mime_type, original_filename=filename)
                 doc.is_vectorized = ok
@@ -155,6 +154,17 @@ class DocumentService:
                 session.refresh(doc)
             except Exception as e:
                 logger.error(f"向量化失败（文件已落盘入库）：id={doc.id}, error={e}")
+
+            # ---- 知识图谱抽取 ----
+            if settings.kg_enabled:
+                try:
+                    from app.backend.service.knowledge_graph_service import kg_service
+                    ok_graph = kg_service.extract_entities(doc.id, storage_path, mime_type, original_filename=filename)
+                    doc.is_graph_extracted = ok_graph
+                    session.commit()
+                    session.refresh(doc)
+                except Exception as e:
+                    logger.error(f"图谱抽取失败（文件已落盘入库）：id={doc.id}, error={e}")
 
             return {**doc.to_dict(), "deduplicated": False}
 
@@ -196,11 +206,18 @@ class DocumentService:
             if not doc:
                 return False
 
-            # 先清向量，避免元数据已删但向量残留
+            # 先清向量
             try:
                 delete_document_vectors(doc.id)
             except Exception as e:
                 logger.error(f"删除向量失败：id={doc.id}, error={e}")
+
+            # 清图谱数据
+            try:
+                from app.backend.service.knowledge_graph_service import kg_service
+                kg_service.delete_by_doc(doc.id)
+            except Exception as e:
+                logger.error(f"删除图谱数据失败：id={doc.id}, error={e}")
 
             # 删除磁盘文件
             if doc.storage_path and os.path.exists(doc.storage_path):

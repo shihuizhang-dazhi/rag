@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SecKB · 企业网络安全助手</title>
-  <link rel="stylesheet" href="/static/css/style.css" />
+  <link rel="stylesheet" href="/static/css/style.css?v=2" />
 </head>
 <body>
   <div id="app">
@@ -74,16 +74,27 @@
             </svg>
             用户管理
           </div>
-          <div v-if="isAdmin || isAuditor" class="nav-item" :class="{ active: view === 'audit' }" @click="view = 'audit'; loadAuditLogs()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-              <line x1="16" y1="13" x2="8" y2="13"></line>
-              <line x1="16" y1="17" x2="8" y2="17"></line>
-              <polyline points="10 9 9 9 8 9"></polyline>
-            </svg>
-            审计日志
-          </div>
+            <div v-if="isAdmin || isAuditor" class="nav-item" :class="{ active: view === 'audit' }" @click="view = 'audit'; loadAuditLogs()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+              </svg>
+              审计日志
+            </div>
+            <div class="nav-item" :class="{ active: view === 'graph' }" @click="view = 'graph'; loadGraphData()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="5" r="2"></circle>
+                <circle cx="5" cy="19" r="2"></circle>
+                <circle cx="19" cy="19" r="2"></circle>
+                <line x1="12" y1="7" x2="5" y2="17"></line>
+                <line x1="12" y1="7" x2="19" y2="17"></line>
+                <line x1="5" y1="17" x2="19" y2="17"></line>
+              </svg>
+              知识图谱
+            </div>
         </nav>
 
         <template v-if="currentUser">
@@ -192,6 +203,20 @@
                       <div class="sources" v-if="m.sources && m.sources.length">
                         <span class="sources-label">参考：</span>
                         <span class="source-chip" v-for="(s, si) in m.sources" :key="si" :title="'相关度 ' + (s.score * 100).toFixed(1) + '%'">{{ s.source || '未知文档' }}</span>
+                        <button v-if="!m.streaming && m.content" class="copy-btn" @click.stop="copyMessage(i)" title="复制">
+                          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>
+                          <span v-if="m._copied" class="copy-tip">已复制</span>
+                        </button>
+                      </div>
+                      <div class="sources" v-if="m.graphSources && m.graphSources.length">
+                        <span class="sources-label">图谱：</span>
+                        <span class="source-chip graph-chip" v-for="(g, gi) in m.graphSources" :key="'g'+gi">{{ g.relation }}</span>
+                      </div>
+                      <div v-else class="bubble-actions">
+                        <button v-if="!m.streaming && m.content" class="copy-btn" @click.stop="copyMessage(i)" title="复制">
+                          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>
+                          <span v-if="m._copied" class="copy-tip">已复制</span>
+                        </button>
                       </div>
                     </div>
                     <div v-else class="bubble">{{ m.content }}</div>
@@ -226,6 +251,17 @@
             </div>
           </div>
         </template>
+
+        <!-- 知识图谱 -->
+        <div v-if="view === 'graph'" class="graph-view">
+          <div class="graph-toolbar">
+            <div class="graph-search-box">
+              <input v-model="graphQuery" @keydown.enter="searchGraph" placeholder="搜索实体，如 SQL注入、Log4j..." class="graph-search-input">
+              <button class="graph-search-btn" @click="searchGraph">搜索</button>
+            </div>
+          </div>
+          <div class="graph-container" ref="graphContainer"></div>
+        </div>
 
         <!-- 文档管理 -->
         <template v-else-if="view === 'docs'">
@@ -424,6 +460,7 @@
   <script src="/static/js/vue.global.prod.js"></script>
   <script src="/static/js/marked.min.js"></script>
   <script src="/static/js/purify.min.js"></script>
+  <script src="https://unpkg.com/vis-network@9.1.6/standalone/umd/vis-network.min.js"></script>
   <script src="/static/js/app.js"></script>
 </body>
 </html>

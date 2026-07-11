@@ -578,6 +578,7 @@ body {
   border: 1px solid var(--bd);
   border-radius: 4px 18px 18px 18px;
   box-shadow: var(--shadow-sm);
+  position: relative;
 }
 
 .msg.user .bubble {
@@ -680,13 +681,51 @@ body {
   40% { opacity: 1; transform: scale(1.2); }
 }
 
+.bubble-actions {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 9px;
+  font-size: 11px;
+  background: rgba(100, 116, 139, 0.1);
+  border: 1px solid rgba(100, 116, 139, 0.18);
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--tm2);
+  transition: all 0.16s ease;
+  flex-shrink: 0;
+  margin-left: auto;
+  vertical-align: middle;
+}
+.copy-btn:hover {
+  color: #5eead4;
+  background: rgba(20, 184, 166, 0.14);
+  border-color: rgba(45, 212, 191, 0.35);
+}
+.copy-btn:active {
+  transform: scale(0.94);
+}
+.copy-tip {
+  font-size: 11px;
+  font-weight: 500;
+  color: #5eead4;
+  pointer-events: none;
+  line-height: 1;
+}
+
 .sources {
+  margin-top: 10px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  padding-left: 2px;
-  margin-top: 10px;
 }
 
 .sources-label {
@@ -703,6 +742,12 @@ body {
   border: 1px solid rgba(45, 212, 191, 0.12);
   cursor: default;
   font-family: var(--mono);
+}
+
+.graph-chip {
+  background: rgba(168, 85, 247, 0.1);
+  color: #c4b5fd;
+  border: 1px solid rgba(168, 85, 247, 0.2);
 }
 
 .composer-shell {
@@ -1653,4 +1698,67 @@ tbody tr:hover { background: var(--hv); }
 .login-modal .login-btn {
   width: 100%;
   margin-top: 8px;
+}
+
+/* ===== 知识图谱 ===== */
+.graph-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0;
+  overflow: hidden;
+}
+
+.graph-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--bd);
+  flex-shrink: 0;
+}
+
+.graph-search-box {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.graph-search-input {
+  width: 320px;
+  padding: 9px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--bd);
+  background: var(--card);
+  color: var(--th);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.16s ease;
+}
+
+.graph-search-input:focus {
+  border-color: var(--cyan);
+}
+
+.graph-search-btn {
+  padding: 9px 18px;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(135deg, var(--cyan), #38bdf8);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.16s ease;
+}
+
+.graph-search-btn:hover {
+  transform: translateY(-1px);
+}
+
+.graph-container {
+  flex: 1;
+  min-height: 0;
+  background: var(--bg);
 }
