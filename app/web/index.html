@@ -189,6 +189,10 @@
                         <div class="spinner"><span></span><span></span><span></span></div>
                       </div>
                       <span v-html="renderMd(m.content)"></span>
+                      <div class="sources" v-if="m.sources && m.sources.length">
+                        <span class="sources-label">参考：</span>
+                        <span class="source-chip" v-for="(s, si) in m.sources" :key="si" :title="'相关度 ' + (s.score * 100).toFixed(1) + '%'">{{ s.source || '未知文档' }}</span>
+                      </div>
                     </div>
                     <div v-else class="bubble">{{ m.content }}</div>
                   </div>
@@ -261,11 +265,7 @@
                     <div class="upload-meta">
                       <div class="upload-name">{{ f.name }}</div>
                       <div class="upload-size">{{ f.size }}</div>
-                    <div class="sources" v-if="m.sources && m.sources.length">
-                      <span class="sources-label">参考：</span>
-                      <span class="source-chip" v-for="(s, si) in m.sources" :key="si" :title="'相关度 ' + s.score">{{ s.source || '未知文档' }}</span>
                     </div>
-                  </div>
                   </div>
                   <span class="upload-status">{{ f.phase === 'vectorizing' ? '正在向量化中' : '上传中 ' + f.percent + '%' }}</span>
                 </div>

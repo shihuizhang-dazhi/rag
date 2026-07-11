@@ -686,6 +686,7 @@ body {
   align-items: center;
   gap: 6px;
   padding-left: 2px;
+  margin-top: 10px;
 }
 
 .sources-label {
