@@ -1,4 +1,6 @@
 import hashlib
+import json
+import os
 import secrets
 import sys
 import time
@@ -277,7 +279,13 @@ def get_conversation_messages(
     )
     messages = []
     for r in rows:
-        messages.append({"role": r.role, "content": r.content})
+        msg = {"role": r.role, "content": r.content}
+        if r.sources:
+            try:
+                msg["sources"] = json.loads(r.sources)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        messages.append(msg)
     return {"messages": messages}
 
 
@@ -379,6 +387,57 @@ def delete_document(
         raise HTTPException(status_code=404, detail="文档不存在")
     _audit(db, current.id, current.username, "delete", f"删除文档 ID={doc_id}", _client_ip(request))
     return {"detail": "删除成功"}
+
+
+@app.get("/documents/{doc_id}/preview")
+def preview_document(
+    doc_id: int,
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.backend.db.models import Document as DocModel
+
+    doc = db.query(DocModel).filter(DocModel.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    if not doc.storage_path or not os.path.exists(doc.storage_path):
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    ext = os.path.splitext(doc.original_filename)[-1].lower()
+    if ext == ".pdf":
+        return FileResponse(
+            doc.storage_path,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"inline; filename={doc.original_filename}"},
+        )
+    content = Path(doc.storage_path).read_text(encoding="utf-8", errors="replace")
+    return JSONResponse({
+        "id": doc.id,
+        "filename": doc.original_filename,
+        "content": content,
+        "mime_type": doc.mime_type,
+    })
+
+
+@app.get("/documents/{doc_id}/download")
+def download_document(
+    doc_id: int,
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.backend.db.models import Document as DocModel
+
+    doc = db.query(DocModel).filter(DocModel.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    if not doc.storage_path or not os.path.exists(doc.storage_path):
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    return FileResponse(
+        doc.storage_path,
+        media_type=doc.mime_type or "application/octet-stream",
+        filename=doc.original_filename,
+    )
 
 
 # ============ 用户管理（管理员） ============

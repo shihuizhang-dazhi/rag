@@ -213,7 +213,7 @@ createApp({
             for (let i = 0; i < raw.length; i += 2) {
               const u = raw[i], b = raw[i + 1];
               if (u && u.role === "user") result.push({ role: "user", content: u.content });
-              if (b && b.role === "assistant") result.push({ role: "bot", content: b.content });
+              if (b && b.role === "assistant") result.push({ role: "bot", content: b.content, sources: b.sources || [] });
             }
             if (result.length > 0) msgs = result;
           }
@@ -457,6 +457,32 @@ createApp({
         if (this.docs.length <= 1 && this.page > 1) this.page -= 1;
         await this.loadDocuments();
       } catch (err) { alert("删除失败：" + err.message); }
+    },
+    async previewDoc(id) {
+      const doc = this.docs.find((d) => d.id === id);
+      if (!doc) return;
+      const ext = (doc.name || "").split(".").pop().toLowerCase();
+      if (ext === "pdf") {
+        window.open("/documents/" + id + "/preview", "_blank");
+        return;
+      }
+      try {
+        const r = await this.apiFetchAuth("/documents/" + id + "/preview");
+        if (!r.ok) { alert("预览失败"); return; }
+        const data = await r.json();
+        const w = window.open("", "_blank", "width=800,height=600");
+        if (!w) { alert("请允许弹出窗口以预览文档"); return; }
+        w.document.title = data.filename;
+        w.document.body.innerHTML = "<pre style='white-space:pre-wrap;font-family:monospace;padding:20px;max-width:100%;overflow-x:auto;'>" + this.escapeHtml(data.content) + "</pre>";
+      } catch (e) { alert("预览失败：" + e.message); }
+    },
+    downloadDoc(id) {
+      window.open("/documents/" + id + "/download", "_blank");
+    },
+    escapeHtml(text) {
+      const d = document.createElement("div");
+      d.textContent = text;
+      return d.innerHTML;
     },
     formatSize(bytes) {
       if (bytes < 1024) return bytes + " B";

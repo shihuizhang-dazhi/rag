@@ -18,6 +18,8 @@ def init_db() -> None:
     """应用启动时创建所有继承 Base 的表结构，并种入默认账号。"""
     Base.metadata.create_all(bind=engine)
     _migrate_add_token_version()
+    _migrate_add_conversation_sources()
+    _migrate_add_conversation_meta_summary()
     _seed_default_users()
 
 
@@ -29,6 +31,24 @@ def _migrate_add_token_version() -> None:
             conn.execute(text("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0"))
             conn.commit()
             logger.info("数据库迁移：已为 users 表添加 token_version 列")
+
+
+def _migrate_add_conversation_sources() -> None:
+    with engine.connect() as conn:
+        cols = {row[1] for row in conn.execute(text("PRAGMA table_info(conversations)")).fetchall()}
+        if "sources" not in cols:
+            conn.execute(text("ALTER TABLE conversations ADD COLUMN sources TEXT"))
+            conn.commit()
+            logger.info("数据库迁移：已为 conversations 表添加 sources 列")
+
+
+def _migrate_add_conversation_meta_summary() -> None:
+    with engine.connect() as conn:
+        cols = {row[1] for row in conn.execute(text("PRAGMA table_info(conversation_meta)")).fetchall()}
+        if "summary" not in cols:
+            conn.execute(text("ALTER TABLE conversation_meta ADD COLUMN summary TEXT"))
+            conn.commit()
+            logger.info("数据库迁移：已为 conversation_meta 表添加 summary 列")
 
 
 def _seed_default_users() -> None:

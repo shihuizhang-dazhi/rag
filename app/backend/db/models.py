@@ -66,6 +66,7 @@ class Conversation(Base):
     thread_id = Column(String(128), nullable=False, index=True, comment="会话标识")
     role = Column(String(16), nullable=False, comment="角色：user / assistant")
     content = Column(Text, nullable=False, comment="消息内容")
+    sources = Column(Text, nullable=True, comment="引用来源 JSON")
     created_at = Column(DateTime, default=func.now(), comment="创建时间")
 
     def to_dict(self) -> dict:
@@ -75,6 +76,7 @@ class Conversation(Base):
             "thread_id": self.thread_id,
             "role": self.role,
             "content": self.content,
+            "sources": self.sources,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -88,6 +90,7 @@ class ConversationMeta(Base):
     user_id = Column(Integer, nullable=False, index=True, comment="所属用户 ID")
     thread_id = Column(String(128), nullable=False, index=True, comment="会话标识")
     title = Column(String(200), nullable=False, default="新会话", comment="自定义标题")
+    summary = Column(Text, nullable=True, comment="历史对话摘要")
 
     def to_dict(self) -> dict:
         return {

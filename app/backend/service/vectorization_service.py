@@ -2,7 +2,7 @@ from pathlib import Path
 
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import CSVLoader, PyPDFLoader, TextLoader
-from langchain_community.embeddings import DashScopeEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import (
     MarkdownHeaderTextSplitter,
     RecursiveCharacterTextSplitter,
@@ -29,9 +29,12 @@ MARKDOWN_HEADER_SPLITTER = MarkdownHeaderTextSplitter(
 
 
 def _get_embeddings():
-    return DashScopeEmbeddings(
-        dashscope_api_key=settings.openai_api_key,
+    return OpenAIEmbeddings(
+        api_key=settings.openai_api_key,
+        base_url=settings.openai_base_url,
         model=settings.embedding_model,
+        check_embedding_ctx_length=False,
+        chunk_size=10,
     )
 
 

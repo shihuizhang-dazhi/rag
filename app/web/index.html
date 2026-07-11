@@ -291,13 +291,17 @@
 
             <div class="doc-table">
               <table v-if="docs.length">
-                <thead><tr><th style="width:40%">文档名称</th><th>大小</th><th>上传时间</th><th>状态</th><th style="width:80px">操作</th></tr></thead>
+                <thead><tr><th style="width:40%">文档名称</th><th>大小</th><th>上传时间</th><th>状态</th><th style="width:110px">操作</th></tr></thead>
                 <tbody>
                   <tr v-for="doc in docs" :key="doc.id">
                     <td><div class="file-cell"><div class="fi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg></div>{{ doc.name }}</div></td>
                     <td>{{ doc.size }}</td><td>{{ doc.time }}</td>
                     <td><span class="tag ok"><span class="d"></span>已向量化</span></td>
-                    <td><span class="row-action" @click="removeDoc(doc.id)">删除</span></td>
+                    <td class="action-cell">
+                      <span class="row-action" @click="previewDoc(doc.id)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>预览</span>
+                      <span class="row-action" @click="downloadDoc(doc.id)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>下载</span>
+                      <span class="row-action danger del-icon" @click="removeDoc(doc.id)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>删除</span>
+                    </td>
                   </tr>
                 </tbody>
               </table>

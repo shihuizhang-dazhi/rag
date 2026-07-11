@@ -1113,43 +1113,51 @@ tbody tr:hover { background: var(--hv); }
   background: currentColor;
 }
 
+.action-cell {
+  white-space: nowrap;
+}
+
 .row-action {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 12px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 600;
+  gap: 3px;
+  padding: 3px 9px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
   cursor: pointer;
   color: var(--cyan-l);
-  background: rgba(20, 184, 166, 0.10);
+  background: rgba(20, 184, 166, 0.08);
   border: 1px solid rgba(45, 212, 191, 0.16);
   transition: all 0.16s ease;
   user-select: none;
 }
 
+.row-action svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
 .row-action:hover {
-  background: rgba(20, 184, 166, 0.18);
-  border-color: rgba(45, 212, 191, 0.28);
+  background: rgba(20, 184, 166, 0.16);
+  border-color: rgba(45, 212, 191, 0.32);
+  transform: translateY(-1px);
 }
 
 .row-action.danger {
   color: var(--red);
-  background: rgba(248, 113, 113, 0.08);
-  border-color: rgba(248, 113, 113, 0.14);
+  background: rgba(248, 113, 113, 0.06);
+  border-color: rgba(248, 113, 113, 0.12);
 }
 
 .row-action.danger:hover {
-  background: rgba(248, 113, 113, 0.16);
-  border-color: rgba(248, 113, 113, 0.26);
+  background: rgba(248, 113, 113, 0.14);
+  border-color: rgba(248, 113, 113, 0.24);
 }
 
 .row-action.danger.del-icon {
-  padding: 4px 9px;
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1;
+  padding: 3px 9px;
 }
 
 .table-check {
