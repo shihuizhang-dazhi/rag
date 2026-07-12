@@ -61,7 +61,7 @@ LOGIN_BLOCK_SECONDS = 300
 # 登录签名盐：salt -> timestamp（120 秒过期，一次性使用）
 _login_salts: dict[str, float] = {}
 LOGIN_SALT_TTL = 120
-POW_DIFFICULTY = 5
+POW_DIFFICULTY = 3
 
 
 def _check_login_rate(key: str) -> int:
