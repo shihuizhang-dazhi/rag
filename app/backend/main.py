@@ -190,7 +190,24 @@ def login(request: Request, payload: dict = Body(...), db: Session = Depends(get
 
 
 @app.get("/auth/me")
-def me(current: User = Depends(get_current_user)):
+def me(request: Request, current: User = Depends(get_current_user)):
+    cookie_token = request.cookies.get("access_token")
+    if not cookie_token:
+        creds_raw = request.headers.get("Authorization", "")
+        cookie_token = creds_raw.removeprefix("Bearer ").strip()
+    if cookie_token:
+        from app.backend.service.auth_service import decode_access_token, JWTError
+        from datetime import datetime, timezone
+        try:
+            payload = decode_access_token(cookie_token)
+            expire_at = datetime.fromtimestamp(payload["exp"], tz=timezone.utc)
+            if (expire_at - datetime.now(timezone.utc)).total_seconds() < settings.token_expire_minutes * 30:
+                token = create_access_token(current.id, extra={"role": current.role, "username": current.username, "ver": current.token_version})
+                resp: JSONResponse = JSONResponse(current.to_dict())
+                resp.set_cookie(key="access_token", value=token, httponly=True, secure=settings.cookie_secure, samesite="strict", max_age=settings.token_expire_minutes * 60, path="/")
+                return resp
+        except (JWTError, KeyError):
+            pass
     return current.to_dict()
 
 

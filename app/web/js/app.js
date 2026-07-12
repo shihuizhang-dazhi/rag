@@ -104,8 +104,14 @@ createApp({
     this.authReady = true;
     if (this.currentUser) {
       this.loadConversations();
+      this._tokenRefreshTimer = setInterval(async () => {
+        try { await this.apiFetch("/auth/me"); } catch (e) {}
+      }, 15 * 60 * 1000);
     }
     this.loadChatSession();
+  },
+  beforeUnmount() {
+    if (this._tokenRefreshTimer) { clearInterval(this._tokenRefreshTimer); this._tokenRefreshTimer = null; }
   },
   computed: {
     isAdmin() { return this.currentUser && this.currentUser.role === "admin"; },
@@ -692,7 +698,11 @@ createApp({
         width: 1,
       })));
       const options = {
-        physics: { solver: "forceAtlas2Based", forceAtlas2Based: { gravitationalConstant: -50, centralGravity: 0.01 } },
+        physics: {
+          solver: "barnesHut",
+          barnesHut: { gravitationalConstant: -2000, centralGravity: 0.3, springLength: 150 },
+          stabilization: { iterations: 200, fit: true },
+        },
         interaction: { hover: true, tooltipDelay: 200 },
         nodes: { font: { face: "var(--ui)" } },
       };

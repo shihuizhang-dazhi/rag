@@ -305,7 +305,7 @@ class KnowledgeGraphService:
         db = SessionLocal()
         try:
             if not query or not query.strip():
-                matched = db.query(GraphEntity).limit(100).all()
+                matched = db.query(GraphEntity).all()
                 all_entity_ids = {e.id for e in matched}
                 all_relations = db.query(GraphRelation).filter(
                     GraphRelation.source_entity_id.in_(all_entity_ids) |
