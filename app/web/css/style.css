@@ -523,7 +523,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 22px;
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
 }
 
 .msg {

@@ -270,7 +270,6 @@ createApp({
       if (this.isStreaming || tid === this.threadId) return;
       this.saveSession();
       this.threadId = tid;
-      this.messages = [{ role: "bot", content: WELCOME }];
       this.loadChatSession();
     },
     newConversation() {
@@ -334,7 +333,7 @@ createApp({
 
     // ===== 对话 =====
     scrollToBottom() {
-      this.$nextTick(() => { const el = this.$refs.messages; if (el) el.scrollTop = el.scrollHeight; });
+      this.$nextTick(() => { const el = this.$refs.messages; if (el) el.scrollTo({ top: el.scrollHeight, behavior: "instant" }); });
     },
     autoGrow(e) { const t = e.target; t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 140) + "px"; },
     onKeydown(e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); this.send(); } },
